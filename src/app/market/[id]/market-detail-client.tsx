@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Clock, Info, Share2, Bookmark, Activity as ActivityIcon } from "lucide-react";
+import { ChevronRight, Clock, Info, Share2, Bookmark, Activity as ActivityIcon, Trophy } from "lucide-react";
 import { motion } from "framer-motion";
 import { CategoryTag, LivePulseDot } from "@/components/expert-badge";
 import { PriceChart } from "@/components/market/price-chart";
@@ -10,6 +10,7 @@ import { MarketTabs } from "@/components/market/market-tabs";
 import { MarketHeroImage } from "@/components/market/market-hero-image";
 import { MarketAISummary } from "@/components/market/market-ai-summary";
 import { ShareCardButton } from "@/components/market/share-card-button";
+import { ResolveMarketDialog } from "@/components/market/resolve-market-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ZapMark } from "@/components/zap-logo";
@@ -20,9 +21,18 @@ import { useState } from "react";
 
 interface MarketDetailClientProps {
   market: Market;
+  canResolve?: boolean;
+  dbStatus?: "open" | "resolved" | "cancelled" | null;
+  dbOutcome?: "yes" | "no" | null;
 }
 
-export function MarketDetailClient({ market }: MarketDetailClientProps) {
+export function MarketDetailClient({
+  market,
+  canResolve = false,
+  dbStatus = null,
+  dbOutcome = null,
+}: MarketDetailClientProps) {
+  const [resolveOpen, setResolveOpen] = useState(false);
   const live = useZapStore((s) => s.marketPrices[market.id]);
   const yesPrice = live?.yes ?? market.currentYesPrice;
   const noPrice = live?.no ?? market.currentNoPrice;
@@ -67,6 +77,37 @@ export function MarketDetailClient({ market }: MarketDetailClientProps) {
                 LIVE
               </Badge>
               <div className="ml-auto flex items-center gap-2">
+                {dbStatus === "resolved" && dbOutcome && (
+                  <Badge
+                    variant="default"
+                    className="font-mono"
+                    style={{
+                      background:
+                        dbOutcome === "yes"
+                          ? "rgba(0,217,130,0.12)"
+                          : "rgba(255,71,87,0.12)",
+                      color: dbOutcome === "yes" ? "#00D982" : "#FF4757",
+                      borderColor:
+                        dbOutcome === "yes"
+                          ? "rgba(0,217,130,0.4)"
+                          : "rgba(255,71,87,0.4)",
+                    }}
+                  >
+                    <Trophy className="h-3 w-3" />
+                    Resolved {dbOutcome.toUpperCase()}
+                  </Badge>
+                )}
+                {canResolve && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setResolveOpen(true)}
+                    className="border-[#FFB800]/40 text-[#FFB800] hover:bg-[#FFB800]/10"
+                  >
+                    <Trophy className="h-3.5 w-3.5" />
+                    Resolve
+                  </Button>
+                )}
                 <ShareCardButton market={market} />
                 <Button size="sm" variant="ghost">
                   <Bookmark className="h-4 w-4" />
@@ -159,6 +200,13 @@ export function MarketDetailClient({ market }: MarketDetailClientProps) {
           </Button>
         </div>
       </div>
+
+      <ResolveMarketDialog
+        marketId={market.id}
+        marketQuestion={market.question}
+        open={resolveOpen}
+        onOpenChange={setResolveOpen}
+      />
 
       {tradeSheetOpen && (
         <motion.div

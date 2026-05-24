@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { completeOnboardingAction } from "./actions";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -44,6 +46,8 @@ export function OnboardingClient() {
 
   const [step, setStep] = useState(0);
   const [selectedCats, setSelectedCats] = useState<Category[]>([]);
+  const [finishing, setFinishing] = useState(false);
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (step === 0) {
@@ -73,8 +77,23 @@ export function OnboardingClient() {
   const next = () => {
     if (step === 1) setCats(selectedCats);
     if (step === STEPS.length - 1) {
-      setOnboarded(true);
-      router.push("/");
+      // Persist to Supabase (best-effort) AND mark the local store as
+      // onboarded so the prototype experience is consistent.
+      setFinishing(true);
+      const t = toast.loading("Saving your preferences…");
+      startTransition(async () => {
+        const res = await completeOnboardingAction({
+          categories: selectedCats,
+        });
+        setOnboarded(true);
+        if (res.ok) {
+          toast.success("Welcome to Zap ⚡", { id: t });
+        } else {
+          // Onboarding still completes locally; backend may be offline.
+          toast.success("Welcome to Zap ⚡ (offline mode)", { id: t });
+        }
+        router.push("/");
+      });
       return;
     }
     setStep((s) => s + 1);
@@ -162,7 +181,7 @@ export function OnboardingClient() {
                 />
               )}
               {step === 3 && (
-                <Step4 onNext={next} onBack={back} />
+                <Step4 onNext={next} onBack={back} finishing={finishing} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -366,7 +385,15 @@ function Step3({
   );
 }
 
-function Step4({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+function Step4({
+  onNext,
+  onBack,
+  finishing,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  finishing?: boolean;
+}) {
   const market = markets[4]; // CPI market — popular pick
   return (
     <div>
@@ -381,11 +408,12 @@ function Step4({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
         <MarketCardCompact market={market} />
       </div>
       <div className="mt-8 flex items-center justify-between">
-        <Button variant="ghost" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack} disabled={finishing}>
           Back
         </Button>
-        <Button onClick={onNext}>
-          Finish onboarding <ArrowRight className="h-4 w-4" />
+        <Button onClick={onNext} disabled={finishing}>
+          {finishing ? "Saving…" : "Finish onboarding"}
+          {!finishing && <ArrowRight className="h-4 w-4" />}
         </Button>
       </div>
     </div>

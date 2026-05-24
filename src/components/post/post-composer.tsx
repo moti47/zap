@@ -17,8 +17,11 @@ import { AttachMarketDialog } from "../market/attach-market-dialog";
 import { RichEditor, type RichEditorHandle } from "./rich-editor";
 import { BoostControl } from "./boost-control";
 import { DraftsMenu } from "./drafts-menu";
+import { MentionPopover } from "./mention-popover";
 import { useZapStore } from "@/lib/store";
 import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
+import { extractMentions } from "@/lib/mentions";
+import { notifyMentionsAction } from "@/app/feed/actions";
 import { CATEGORIES, markets, type Category } from "@/lib/mock-data";
 import { cn, categoryColor } from "@/lib/utils";
 import {
@@ -71,6 +74,7 @@ export function PostComposer({
   );
   const draftSaveTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 
   // Legacy support: pick up market attached via the old catalog-redirect flow
   // (?attachMarket=…) so deep links don't break.
@@ -174,7 +178,7 @@ export function PostComposer({
     }
     const cleanHtml = sanitizeHtml(bodyHtml);
     const willBoost = boostEnabled && boostAmount <= balance;
-    addPost({
+    const newPost = addPost({
       body: cleanHtml,
       category: category as Category,
       marketId: marketId || undefined,
@@ -182,6 +186,16 @@ export function PostComposer({
       boostZaps: willBoost ? boostAmount : undefined,
       boostDurationH: willBoost ? boostDurationH : undefined,
     });
+    // Phase 9 — fire @mention notifications (best-effort, fails silently
+    // when there's no Supabase backend wired).
+    const mentioned = extractMentions(bodyText);
+    if (mentioned.length) {
+      void notifyMentionsAction({
+        usernames: mentioned,
+        post_id: newPost.id,
+        excerpt: bodyText.slice(0, 140),
+      }).catch(() => {});
+    }
     toast.success(willBoost ? "Posted & boosted 🚀" : "Posted ⚡", {
       description: willBoost
         ? `${boostAmount}⚡ boost for ${boostDurationH}h.`
@@ -358,14 +372,30 @@ export function PostComposer({
         <div className="flex-1 min-w-0">
           <RichEditor
             ref={editorRef}
-            placeholder="What's your call?"
+            placeholder="What's your call? Try @username to mention someone."
             initialHtml={editorInitialHtml}
             onChange={(html, text) => {
               setBodyHtml(html);
               setBodyText(text);
+              // Detect open `@xxx` partial token near the end so the
+              // popover can show suggestions. We deliberately read from the
+              // end of the text only — the editor cursor is almost always
+              // there as the user types.
+              const tail = text.slice(-32);
+              const m = tail.match(/(?:^|[\s>(])@([a-z0-9_]{0,20})$/i);
+              setMentionQuery(m ? m[1] : null);
             }}
             onKeyDownPublish={handlePublish}
             maxLen={MAX_LEN}
+          />
+
+          <MentionPopover
+            query={mentionQuery}
+            onPick={(u) => {
+              editorRef.current?.replaceMention(u.username);
+              setMentionQuery(null);
+            }}
+            onClose={() => setMentionQuery(null)}
           />
 
           {/* Image previews */}

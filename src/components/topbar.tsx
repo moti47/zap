@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown";
 import { PostComposer } from "./post/post-composer";
+import { GlobalSearch } from "./global-search";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -56,6 +57,19 @@ export function Topbar() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Cmd/Ctrl-K toggles the global search dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <>
@@ -223,30 +237,8 @@ export function Topbar() {
         </div>
       </header>
 
-      {/* Search modal */}
-      <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <DialogContent className="sm:max-w-xl p-0">
-          <DialogHeader className="p-4 pb-0">
-            <DialogTitle className="sr-only">Search</DialogTitle>
-            <DialogDescription className="sr-only">
-              Search markets, people, topics.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-4 pt-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#5A6175]" />
-              <Input
-                autoFocus
-                placeholder="Search markets, people, topics..."
-                className="pl-9 h-11 bg-[#14161D]"
-              />
-            </div>
-            <div className="mt-3 text-[11px] font-mono uppercase tracking-widest text-[#5A6175]">
-              Full-text search coming in phase 9
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Global search modal (Phase 9) */}
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Mobile drawer */}
       {mobileMenuOpen && (

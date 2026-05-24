@@ -39,6 +39,13 @@ export interface RichEditorHandle {
   setHtml: (html: string) => void;
   clear: () => void;
   insertImage: (src: string) => void;
+  insertText: (text: string) => void;
+  /**
+   * Phase 9 mention helper — replaces the partial `@xxx` token immediately
+   * before the cursor with `@username ` (trailing space). No-op if the
+   * cursor isn't sitting after an `@` token.
+   */
+  replaceMention: (username: string) => void;
 }
 
 interface RichEditorProps {
@@ -174,6 +181,32 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
         },
         insertImage: (src: string) => {
           editor?.chain().focus().setImage({ src }).run();
+        },
+        insertText: (text: string) => {
+          editor?.chain().focus().insertContent(text).run();
+        },
+        replaceMention: (username: string) => {
+          if (!editor) return;
+          const { state } = editor;
+          const { from } = state.selection;
+          // Look backwards from the cursor for the `@` that started the token.
+          const lineStart = Math.max(
+            0,
+            state.doc.resolve(from).start(),
+          );
+          const slice = state.doc.textBetween(lineStart, from, " ", " ");
+          const m = slice.match(/@([a-z0-9_]*)$/i);
+          if (!m) {
+            editor.chain().focus().insertContent(`@${username} `).run();
+            return;
+          }
+          const tokenLen = m[0].length;
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from: from - tokenLen, to: from })
+            .insertContent(`@${username} `)
+            .run();
         },
       }),
       [editor],

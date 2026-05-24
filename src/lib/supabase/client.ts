@@ -11,3 +11,15 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 }
+
+/**
+ * Returns true when the Supabase env vars are set in the browser bundle.
+ * Use to avoid calling `createClient()` (which throws on missing env) in
+ * prototype/no-backend mode.
+ */
+export function hasSupabaseEnv(): boolean {
+  return (
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}

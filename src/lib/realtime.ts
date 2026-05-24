@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
 import type {
   PostRow,
   CommentRow,
@@ -15,6 +15,7 @@ type Handler<T> = (payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; row: T;
 /** Subscribe to live trades. Optionally scoped to a single market. */
 export function useTradesChannel(handler: Handler<TradeRow>, marketId?: string) {
   useEffect(() => {
+    if (!hasSupabaseEnv()) return;
     const sb = createClient();
     const channel = sb
       .channel(marketId ? `trades:${marketId}` : "trades:all")
@@ -43,6 +44,7 @@ export function useTradesChannel(handler: Handler<TradeRow>, marketId?: string) 
 /** Subscribe to new posts (feed-wide). */
 export function usePostsChannel(handler: Handler<PostRow>) {
   useEffect(() => {
+    if (!hasSupabaseEnv()) return;
     const sb = createClient();
     const channel = sb
       .channel("posts:all")
@@ -67,6 +69,7 @@ export function usePostsChannel(handler: Handler<PostRow>) {
 export function useCommentsChannel(postId: string, handler: Handler<CommentRow>) {
   useEffect(() => {
     if (!postId) return;
+    if (!hasSupabaseEnv()) return;
     const sb = createClient();
     const channel = sb
       .channel(`comments:${postId}`)
@@ -95,6 +98,7 @@ export function useCommentsChannel(postId: string, handler: Handler<CommentRow>)
 /** Subscribe to market-price updates. */
 export function useMarketsChannel(handler: Handler<MarketRow>) {
   useEffect(() => {
+    if (!hasSupabaseEnv()) return;
     const sb = createClient();
     const channel = sb
       .channel("markets:all")
@@ -122,6 +126,7 @@ export function useNotificationsChannel(
 ) {
   useEffect(() => {
     if (!userId) return;
+    if (!hasSupabaseEnv()) return;
     const sb = createClient();
     const channel = sb
       .channel(`notifications:${userId}`)
