@@ -32,3 +32,35 @@ export async function uploadPostImage(file: File): Promise<{ url: string }> {
   const { data } = supabase.storage.from("post-images").getPublicUrl(path);
   return { url: data.publicUrl };
 }
+
+/**
+ * Upload an avatar to the `avatars` bucket. RLS requires the first folder
+ * segment to match the uploader's auth.uid().
+ *
+ * Returns the public URL on success.
+ */
+export async function uploadAvatar(file: File): Promise<{ url: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+
+  const ext =
+    file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
+    (file.type.split("/")[1] ?? "png");
+  const rand = Math.random().toString(36).slice(2, 8);
+  const path = `${user.id}/avatar-${Date.now()}-${rand}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("avatars")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return { url: data.publicUrl };
+}

@@ -7,55 +7,127 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { PostCard } from "../post/post-card";
 import { ZapMark } from "../zap-logo";
 import { CategoryTag } from "../expert-badge";
-import { useZapStore } from "@/lib/store";
-import { posts, getMarket, type User } from "@/lib/mock-data";
-import { cn, timeAgo } from "@/lib/utils";
+import { useZapStore, type UserPost } from "@/lib/store";
+import { posts, getMarket, type Category, type User } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
+
+export interface RealProfilePost {
+  id: string;
+  author_id: string;
+  body_html: string;
+  category_slug: string;
+  market_id: string | null;
+  images: string[];
+  likes: number;
+  comments_count: number;
+  shares: number;
+  created_at: string;
+  boost_zaps?: number | null;
+  boost_until?: string | null;
+}
 
 interface ProfileTabsProps {
   user: User;
+  /**
+   * Real posts loaded from Supabase (when the profile maps to a real user).
+   * When present, these take precedence over mock data on the Posts tab.
+   */
+  realPosts?: RealProfilePost[] | null;
+  /** True while the parent server is fetching/refreshing. */
+  loading?: boolean;
 }
 
-const TABS = ["posts", "predictions", "holdings", "history"] as const;
-type TabId = typeof TABS[number];
+const TABS = ["posts", "markets", "activity"] as const;
+type TabId = (typeof TABS)[number];
+const DEFAULT_TAB: TabId = "posts";
 
-export function ProfileTabs({ user }: ProfileTabsProps) {
+function realPostToUserPost(p: RealProfilePost, userId: string): UserPost {
+  return {
+    id: p.id,
+    type: "user",
+    userId,
+    createdAt: p.created_at,
+    body: p.body_html,
+    category: (p.category_slug as Category) || undefined,
+    marketId: p.market_id ?? undefined,
+    images: Array.isArray(p.images) ? p.images : [],
+    likes: p.likes ?? 0,
+    comments: p.comments_count ?? 0,
+    shares: p.shares ?? 0,
+    views: 0,
+    isMine: false,
+    boostZaps: p.boost_zaps ?? undefined,
+    boostUntil: p.boost_until ?? null,
+    impressions: 0,
+    clicks: 0,
+    throttled: false,
+    boostEarlyStoppedAt: null,
+  };
+}
+
+export function ProfileTabs({ user, realPosts, loading }: ProfileTabsProps) {
   const userPosts = useZapStore(useShallow((s) => s.userPosts));
   const positions = useZapStore(useShallow((s) => s.positions));
   const isMe = user.username === "you";
 
-  const [tab, setTab] = useState<TabId>("posts");
+  const [tab, setTab] = useState<TabId>(DEFAULT_TAB);
+  const [hashReady, setHashReady] = useState(false);
 
-  // Sync URL hash → tab
+  // Sync URL hash → tab (default to #posts).
   useEffect(() => {
-    const fromHash = () => {
+    const readHash = () => {
       const h = (window.location.hash || "").replace("#", "") as TabId;
-      if ((TABS as readonly string[]).includes(h)) setTab(h);
+      if ((TABS as readonly string[]).includes(h)) {
+        setTab(h);
+      } else {
+        setTab(DEFAULT_TAB);
+      }
+      setHashReady(true);
     };
-    fromHash();
-    window.addEventListener("hashchange", fromHash);
-    return () => window.removeEventListener("hashchange", fromHash);
+    readHash();
+    window.addEventListener("hashchange", readHash);
+    return () => window.removeEventListener("hashchange", readHash);
   }, []);
 
   const onTabChange = (v: string) => {
-    setTab(v as TabId);
+    const next = v as TabId;
+    setTab(next);
     if (typeof window !== "undefined") {
-      history.replaceState(null, "", `#${v}`);
+      history.replaceState(null, "", `#${next}`);
     }
   };
 
   const userMockPosts = useMemo(
     () => posts.filter((p) => p.userId === user.id),
-    [user.id]
+    [user.id],
   );
 
+  // Real Supabase posts win when present. Otherwise fall back to mock + local.
   const profilePosts = useMemo(() => {
+    if (realPosts && realPosts.length >= 0) {
+      const mapped = realPosts.map((p) => realPostToUserPost(p, user.id));
+      // Newest first (DB already does this, but be defensive).
+      mapped.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      // For the current user, merge in locally-created posts that haven't
+      // been persisted yet so the prototype demo still feels live.
+      if (isMe) {
+        const localOnly = userPosts.filter(
+          (p) => !mapped.some((r) => r.id === p.id),
+        );
+        return [...localOnly, ...mapped];
+      }
+      return mapped;
+    }
     if (isMe) return [...userPosts, ...userMockPosts];
     return userMockPosts;
-  }, [isMe, userPosts, userMockPosts]);
+  }, [realPosts, isMe, userPosts, userMockPosts, user.id]);
 
   const userPredictions = useMemo(
-    () => profilePosts.filter((p) => p.type === "prediction"),
-    [profilePosts]
+    () => userMockPosts.filter((p) => p.type === "prediction"),
+    [userMockPosts],
   );
 
   const userHoldings = useMemo(
@@ -72,7 +144,7 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
               staked: p.staked,
               openedAt: p.createdAt,
             })),
-    [isMe, positions, userMockPosts]
+    [isMe, positions, userMockPosts],
   );
 
   return (
@@ -84,37 +156,25 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
             {profilePosts.length}
           </span>
         </TabsTrigger>
-        <TabsTrigger value="predictions">
-          Predictions{" "}
-          <span className="text-[10px] font-mono text-[#5A6175] ml-1">
-            {userPredictions.length}
-          </span>
-        </TabsTrigger>
-        <TabsTrigger value="holdings">
-          Holdings{" "}
+        <TabsTrigger value="markets">
+          Markets{" "}
           <span className="text-[10px] font-mono text-[#5A6175] ml-1">
             {userHoldings.length}
           </span>
         </TabsTrigger>
-        <TabsTrigger value="history">History</TabsTrigger>
+        <TabsTrigger value="activity">
+          Activity{" "}
+          <span className="text-[10px] font-mono text-[#5A6175] ml-1">
+            {userPredictions.length}
+          </span>
+        </TabsTrigger>
       </TabsList>
-
-      <TabsContent value="predictions">
-        <div className="space-y-3">
-          {userPredictions.length === 0 ? (
-            <EmptyState
-              title="No predictions yet"
-              cta={isMe ? "Make your first prediction →" : null}
-            />
-          ) : (
-            userPredictions.map((p) => <PostCard key={p.id} post={p as any} />)
-          )}
-        </div>
-      </TabsContent>
 
       <TabsContent value="posts">
         <div className="space-y-3">
-          {profilePosts.length === 0 ? (
+          {loading && hashReady && profilePosts.length === 0 ? (
+            <PostSkeletonList />
+          ) : profilePosts.length === 0 ? (
             <EmptyState
               title="No posts yet"
               cta={isMe ? "Write your first take →" : null}
@@ -126,7 +186,7 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
         </div>
       </TabsContent>
 
-      <TabsContent value="holdings">
+      <TabsContent value="markets">
         {userHoldings.length === 0 ? (
           <EmptyState
             title="No positions yet"
@@ -154,7 +214,9 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
                       value={
                         <span
                           className={
-                            h.side === "YES" ? "text-[#00D982]" : "text-[#FF4757]"
+                            h.side === "YES"
+                              ? "text-[#00D982]"
+                              : "text-[#FF4757]"
                           }
                         >
                           {h.side === "YES" ? "▲" : "▼"} {h.side}
@@ -179,7 +241,7 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
         )}
       </TabsContent>
 
-      <TabsContent value="history">
+      <TabsContent value="activity">
         <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] overflow-hidden">
           <div className="px-5 py-3 border-b border-[#2A2F3D]">
             <h3 className="text-[13px] font-semibold">Resolved Predictions</h3>
@@ -200,7 +262,7 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
                     "px-2 py-0.5 rounded text-[10px] font-mono font-bold",
                     won
                       ? "bg-[#00D982]/15 text-[#00D982]"
-                      : "bg-[#FF4757]/15 text-[#FF4757]"
+                      : "bg-[#FF4757]/15 text-[#FF4757]",
                   )}
                 >
                   {won ? "WON" : "LOST"}
@@ -211,7 +273,7 @@ export function ProfileTabs({ user }: ProfileTabsProps) {
                 <span
                   className={cn(
                     "font-mono text-sm tabular-nums inline-flex items-center",
-                    won ? "text-[#00D982]" : "text-[#FF4757]"
+                    won ? "text-[#00D982]" : "text-[#FF4757]",
                   )}
                 >
                   {won ? "+" : ""}
@@ -263,6 +325,32 @@ function EmptyState({
           {cta}
         </Link>
       )}
+    </div>
+  );
+}
+
+function PostSkeletonList() {
+  return (
+    <div className="space-y-3" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] p-5 animate-pulse"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-[#2A2F3D]" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-32 bg-[#2A2F3D] rounded" />
+              <div className="h-2 w-20 bg-[#2A2F3D] rounded" />
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            <div className="h-3 w-full bg-[#2A2F3D] rounded" />
+            <div className="h-3 w-3/4 bg-[#2A2F3D] rounded" />
+            <div className="h-3 w-5/6 bg-[#2A2F3D] rounded" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

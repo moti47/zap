@@ -13,12 +13,21 @@ import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, categoryColor } from "@/lib/utils";
 import type { User } from "@/lib/mock-data";
+import type { ProfileRow } from "@/lib/supabase/types";
 
 interface ProfileHeroProps {
   user: User;
+  /** Supabase profile row when this profile maps to a real account. */
+  dbProfile?: ProfileRow | null;
+  /** Whether the current viewer can edit this profile. */
+  canEdit?: boolean;
 }
 
-export function ProfileHero({ user }: ProfileHeroProps) {
+export function ProfileHero({
+  user,
+  dbProfile = null,
+  canEdit,
+}: ProfileHeroProps) {
   const followingIds = useZapStore(useShallow((s) => s.followingUserIds));
   const subscribedIds = useZapStore(useShallow((s) => s.subscribedUserIds));
   const toggleFollow = useZapStore((s) => s.toggleFollow);
@@ -27,14 +36,21 @@ export function ProfileHero({ user }: ProfileHeroProps) {
 
   const following = followingIds.includes(user.id);
   const subscribed = subscribedIds.includes(user.id);
-  const isMe = user.username === "you";
+  const isMe = canEdit ?? user.username === "you";
 
-  const displayName = isMe ? override.name || user.name : user.name;
-  const displayBio = isMe ? override.bio || user.bio : user.bio;
+  const displayName = isMe
+    ? override.name || dbProfile?.name || user.name
+    : dbProfile?.name || user.name;
+  const displayBio = isMe
+    ? override.bio ?? dbProfile?.bio ?? user.bio
+    : dbProfile?.bio ?? user.bio;
+  // Prefer real avatar URL → local override gradient → category gradient.
+  const dbAvatarUrl = dbProfile?.avatar_url ?? null;
   const avatarGradient =
-    isMe && override.avatarGradient
+    isMe && !dbAvatarUrl && override.avatarGradient
       ? override.avatarGradient
       : undefined;
+  const coverGradient = dbProfile?.cover_gradient ?? null;
 
   const [editOpen, setEditOpen] = useState(false);
 
@@ -44,9 +60,11 @@ export function ProfileHero({ user }: ProfileHeroProps) {
       <div
         className="h-32 lg:h-40 rounded-[14px] relative overflow-hidden"
         style={{
-          background: `linear-gradient(135deg, ${categoryColor(
-            user.primaryCategory
-          )}40, #14161D 70%)`,
+          background:
+            coverGradient ||
+            `linear-gradient(135deg, ${categoryColor(
+              user.primaryCategory,
+            )}40, #14161D 70%)`,
         }}
       >
         <div
@@ -62,7 +80,14 @@ export function ProfileHero({ user }: ProfileHeroProps) {
       {/* Profile body */}
       <div className="px-4 lg:px-6 -mt-12 lg:-mt-14 relative">
         <div className="flex items-end justify-between gap-4 flex-wrap">
-          {avatarGradient ? (
+          {dbAvatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={dbAvatarUrl}
+              alt={displayName}
+              className="h-20 w-20 lg:h-24 lg:w-24 rounded-full object-cover ring-4 ring-[#0A0B0F] bg-[#1A1D26]"
+            />
+          ) : avatarGradient ? (
             <div
               className="h-20 w-20 lg:h-24 lg:w-24 rounded-full flex items-center justify-center text-[#0A0B0F] font-bold text-3xl ring-4 ring-[#0A0B0F]"
               style={{ background: avatarGradient }}
@@ -176,8 +201,12 @@ export function ProfileHero({ user }: ProfileHeroProps) {
         <EditProfileModal
           open={editOpen}
           onOpenChange={setEditOpen}
-          initialName={user.name}
-          initialBio={user.bio}
+          initialName={displayName}
+          initialBio={displayBio ?? ""}
+          initialAvatarUrl={dbAvatarUrl}
+          initialCoverGradient={coverGradient}
+          hasBackend={!!dbProfile}
+          username={dbProfile?.username ?? user.username}
         />
       )}
     </div>
