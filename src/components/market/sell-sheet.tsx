@@ -14,7 +14,7 @@ import { CategoryTag } from "../expert-badge";
 import { ZapMark } from "../zap-logo";
 import { useShallow } from "zustand/react/shallow";
 import { useZapStore } from "@/lib/store";
-import { getMarket } from "@/lib/mock-data";
+import { getMarket } from "@/lib/fixtures";
 import { cn } from "@/lib/utils";
 
 interface SellSheetProps {

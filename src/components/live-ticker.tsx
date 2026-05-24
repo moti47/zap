@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { LivePulseDot } from "./expert-badge";
 import { ZapMark } from "./zap-logo";
 import { useZapStore } from "@/lib/store";
-import { getUser, getMarket } from "@/lib/mock-data";
+import { getUser, getMarket } from "@/lib/fixtures";
 import { cn } from "@/lib/utils";
 
 export function LiveTicker({ className }: { className?: string }) {

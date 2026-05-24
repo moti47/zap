@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { searchProfilesByPrefix } from "@/lib/db/search";
-import { users as mockUsers } from "@/lib/mock-data";
+import { users as mockUsers } from "@/lib/fixtures";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  * GET /api/mentions?q=al — prefix lookup of usernames + names for the
  * composer's @-mention popover. Returns up to 6 matches.
  *
- * Falls back to mock-data when Supabase isn't wired so the demo composer
+ * Falls back to demo fixtures when Supabase isn't wired so the demo composer
  * still gets useful suggestions.
  */
 export async function GET(req: Request) {

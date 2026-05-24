@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { PostCard } from "./post/post-card";
 import { MarketCardCompact } from "./market/market-card-compact";
 import { useZapStore, useHydrated, type UserPost } from "@/lib/store";
-import { posts, markets, type Category } from "@/lib/mock-data";
+import { posts, markets, type Category } from "@/lib/fixtures";
 import { Skeleton } from "./ui/skeleton";
 
 export interface SavedPostShape {

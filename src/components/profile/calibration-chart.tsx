@@ -9,7 +9,7 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
-import type { User } from "@/lib/mock-data";
+import type { User } from "@/lib/fixtures";
 import { ChartContainer } from "../market/chart-container";
 
 const ComposedChart = dynamic(

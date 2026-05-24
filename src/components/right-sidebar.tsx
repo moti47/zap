@@ -26,7 +26,7 @@ import {
   markets,
   CATEGORIES,
   type Category,
-} from "@/lib/mock-data";
+} from "@/lib/fixtures";
 import { useZapStore, useHydrated } from "@/lib/store";
 import { formatLargeNumber, timeAgo, timeUntil, categoryColor } from "@/lib/utils";
 

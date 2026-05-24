@@ -9,7 +9,7 @@ import {
   users,
   CATEGORIES,
   type Category,
-} from "@/lib/mock-data";
+} from "@/lib/fixtures";
 import { useShallow } from "zustand/react/shallow";
 import { useZapStore, useHydrated } from "@/lib/store";
 import { categoryColor, formatLargeNumber, timeUntil } from "@/lib/utils";

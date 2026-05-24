@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { CATEGORIES, type Category } from "@/lib/mock-data";
+import { CATEGORIES, type Category } from "@/lib/fixtures";
 import { CategoryView } from "./category-view";
 
 export function generateStaticParams() {

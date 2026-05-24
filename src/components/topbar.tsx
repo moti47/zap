@@ -220,15 +220,28 @@ export function Topbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <form action="/auth/sign-out" method="post" className="w-full">
-                    <button
-                      type="submit"
-                      className="flex items-center w-full text-left text-[#FF4757]"
-                    >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Sign Out
-                    </button>
+                <DropdownMenuItem
+                  // The DropdownMenuItem already renders as a button via
+                  // Radix, so embedding another `<button>` inside it would
+                  // trigger React's "<button> cannot appear as a descendant
+                  // of <button>" hydration warning. We bypass that by
+                  // submitting the form imperatively via a form ref.
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    (document.getElementById(
+                      "topbar-signout-form",
+                    ) as HTMLFormElement | null)?.requestSubmit();
+                  }}
+                  className="cursor-pointer"
+                >
+                  <form
+                    id="topbar-signout-form"
+                    action="/auth/sign-out"
+                    method="post"
+                    className="w-full flex items-center text-[#FF4757]"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
                   </form>
                 </DropdownMenuItem>
               </DropdownMenuContent>

@@ -10,7 +10,7 @@ import { Podium } from "@/components/leaderboard/podium";
 import { Button } from "@/components/ui/button";
 import { ZapMark } from "@/components/zap-logo";
 import { useZapStore } from "@/lib/store";
-import { users, CATEGORIES, type Category } from "@/lib/mock-data";
+import { users, CATEGORIES, type Category } from "@/lib/fixtures";
 import { cn, formatLargeNumber, categoryColor } from "@/lib/utils";
 
 type Range = "all-time" | "month" | "week";

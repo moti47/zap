@@ -20,7 +20,7 @@ import {
   relatedMarkets,
   type Market,
   commentsForMarket,
-} from "@/lib/mock-data";
+} from "@/lib/fixtures";
 import { timeAgo, cn, formatLargeNumber } from "@/lib/utils";
 
 interface MarketTabsProps {

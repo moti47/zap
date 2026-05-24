@@ -17,7 +17,7 @@ import { ExpertBadge } from "../expert-badge";
 import { Textarea } from "../ui/textarea";
 import { Button } from "../ui/button";
 import { useZapStore, type UserComment } from "@/lib/store";
-import { getUser, seededComments, type SeededComment } from "@/lib/mock-data";
+import { getUser, seededComments, type SeededComment } from "@/lib/fixtures";
 import { cn, timeAgo } from "@/lib/utils";
 
 const MAX_VISIBLE_DEPTH = 4;

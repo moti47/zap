@@ -23,7 +23,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { ExpertBadge } from "@/components/expert-badge";
 import { MarketCardCompact } from "@/components/market/market-card-compact";
 import { useZapStore } from "@/lib/store";
-import { CATEGORIES, type Category, users, markets } from "@/lib/mock-data";
+import { CATEGORIES, type Category, users, markets } from "@/lib/fixtures";
 import { cn, categoryColor, formatLargeNumber } from "@/lib/utils";
 
 const ICON_MAP: Record<Category, any> = {

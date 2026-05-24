@@ -20,7 +20,7 @@ import { ZapMark } from "../zap-logo";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatLargeNumber } from "@/lib/utils";
-import type { Market } from "@/lib/mock-data";
+import type { Market } from "@/lib/fixtures";
 
 interface TradePanelProps {
   market: Market;

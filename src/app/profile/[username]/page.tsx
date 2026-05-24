@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { users, currentUser, type User } from "@/lib/mock-data";
+import { users, currentUser, type User } from "@/lib/fixtures";
 import { ProfileHero } from "@/components/profile/profile-hero";
 import { ExpertScoresStrip } from "@/components/profile/expert-scores-strip";
 import { CalibrationChart } from "@/components/profile/calibration-chart";

@@ -6,7 +6,7 @@ import { Sparkles, RefreshCw } from "lucide-react";
 import { Skeleton } from "../ui/skeleton";
 import { useZapStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import type { Market } from "@/lib/mock-data";
+import type { Market } from "@/lib/fixtures";
 
 interface MarketAISummaryProps {
   market: Market;

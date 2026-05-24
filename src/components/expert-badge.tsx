@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cn, categoryColor } from "@/lib/utils";
-import type { Category } from "@/lib/mock-data";
+import type { Category } from "@/lib/fixtures";
 
 interface ExpertBadgeProps {
   category: Category;

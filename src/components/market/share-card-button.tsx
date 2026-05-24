@@ -18,7 +18,7 @@ import { CategoryTag } from "../expert-badge";
 import { Sparkline } from "./sparkline";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
-import type { Market } from "@/lib/mock-data";
+import type { Market } from "@/lib/fixtures";
 import { formatLargeNumber } from "@/lib/utils";
 
 interface ShareCardButtonProps {

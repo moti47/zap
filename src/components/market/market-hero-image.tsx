@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { cn, categoryColor } from "@/lib/utils";
-import type { Category } from "@/lib/mock-data";
+import type { Category } from "@/lib/fixtures";
 
 const IMAGE_MAP: Record<Category, string> = {
   politics:

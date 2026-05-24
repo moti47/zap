@@ -22,7 +22,7 @@ import { useZapStore } from "@/lib/store";
 import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { extractMentions } from "@/lib/mentions";
 import { notifyMentionsAction } from "@/app/feed/actions";
-import { CATEGORIES, markets, type Category } from "@/lib/mock-data";
+import { CATEGORIES, markets, type Category } from "@/lib/fixtures";
 import { cn, categoryColor } from "@/lib/utils";
 import {
   BOOST_AMOUNTS,

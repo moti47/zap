@@ -13,7 +13,7 @@ import { Progress } from "../ui/progress";
 import { Badge } from "../ui/badge";
 import { ZapMark } from "../zap-logo";
 import { TradeModal } from "./trade-modal";
-import type { Market } from "@/lib/mock-data";
+import type { Market } from "@/lib/fixtures";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, timeUntil, cn } from "@/lib/utils";

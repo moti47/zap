@@ -1,7 +1,7 @@
 import { NotificationsList } from "@/components/notifications-list";
 import { listMyNotifications } from "@/lib/db/notifications";
 import { getCurrentProfile } from "@/lib/db/profiles";
-import { notifications as mockNotifications } from "@/lib/mock-data";
+import { notifications as mockNotifications } from "@/lib/fixtures";
 import type {
   NotificationWithPayload,
   NotificationKind,

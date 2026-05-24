@@ -20,7 +20,7 @@ import {
   CATEGORIES,
   type Category,
   type Market,
-} from "@/lib/mock-data";
+} from "@/lib/fixtures";
 import {
   cn,
   categoryColor,

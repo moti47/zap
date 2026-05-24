@@ -12,7 +12,7 @@ import { ZapMark } from "../zap-logo";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, categoryColor } from "@/lib/utils";
-import type { User } from "@/lib/mock-data";
+import type { User } from "@/lib/fixtures";
 import type { ProfileRow } from "@/lib/supabase/types";
 
 interface ProfileHeroProps {

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { UserAvatar } from "../user-avatar";
 import { ExpertBadge, CategoryTag, LivePulseDot } from "../expert-badge";
 import { ZapMark } from "../zap-logo";
-import { users, markets } from "@/lib/mock-data";
+import { users, markets } from "@/lib/fixtures";
 import { categoryColor } from "@/lib/utils";
 
 export function AmbientFeed() {

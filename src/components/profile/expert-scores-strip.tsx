@@ -10,7 +10,7 @@ import {
   Music,
   TrendingUp,
 } from "lucide-react";
-import { CATEGORIES, type Category, type User } from "@/lib/mock-data";
+import { CATEGORIES, type Category, type User } from "@/lib/fixtures";
 import { categoryColor } from "@/lib/utils";
 import { Sparkline } from "../market/sparkline";
 

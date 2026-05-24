@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { ZapMark } from "@/components/zap-logo";
 import { useZapStore } from "@/lib/store";
 import { formatLargeNumber, timeUntil, categoryColor, categoryTextClass } from "@/lib/utils";
-import type { Market } from "@/lib/mock-data";
+import type { Market } from "@/lib/fixtures";
 import { useState } from "react";
 
 interface MarketDetailClientProps {

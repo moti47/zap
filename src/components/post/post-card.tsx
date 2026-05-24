@@ -22,7 +22,7 @@ import { ExposureExplain } from "./exposure-explain";
 import { BoostPerformance } from "./boost-performance";
 import { toast } from "sonner";
 import { useZapStore, type UserPost } from "@/lib/store";
-import { currentUser, getMarket, getUser, type Post } from "@/lib/mock-data";
+import { currentUser, getMarket, getUser, type Post } from "@/lib/fixtures";
 import { cn, timeAgo, formatLargeNumber } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { SellSheet } from "../market/sell-sheet";

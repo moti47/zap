@@ -9,7 +9,7 @@ import {
 } from "../ui/dialog";
 import { CategoryTag } from "../expert-badge";
 import { TradePanel } from "./trade-panel";
-import { getMarket } from "@/lib/mock-data";
+import { getMarket } from "@/lib/fixtures";
 
 interface TradeModalProps {
   marketId: string | null;

@@ -11,7 +11,7 @@ import { ZapMark } from "../zap-logo";
 import { Sparkline } from "./sparkline";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
-import { markets, CATEGORIES, type Category } from "@/lib/mock-data";
+import { markets, CATEGORIES, type Category } from "@/lib/fixtures";
 import { cn, categoryColor, formatLargeNumber, timeUntil } from "@/lib/utils";
 
 const HERO_BY_CATEGORY: Record<Category, string[]> = {

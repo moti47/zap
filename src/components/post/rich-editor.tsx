@@ -99,8 +99,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       immediatelyRender: false,
       extensions: [
         StarterKit.configure({
-          // we add Link + Underline explicitly
+          // we add Link + Underline explicitly (StarterKit v3 ships its
+          // own underline node so we disable that here to avoid the
+          // "Duplicate extension names found: ['underline']" warning).
           link: false,
+          underline: false,
           heading: { levels: [2, 3] },
         }),
         Placeholder.configure({

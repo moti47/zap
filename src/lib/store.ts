@@ -2,16 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import {
-  markets,
-  posts as seedPosts,
-  recentTrades,
-  type Trade,
-  type Post,
-  type PostBase,
-  type Category,
-} from "./mock-data";
+import { markets, posts as seedPosts, recentTrades } from "./fixtures";
+import type { Trade, Post, Category } from "./types";
 import {
   updateAffinity,
   checkThrottle,
@@ -200,8 +192,7 @@ markets.forEach((m) => {
 });
 
 export const useZapStore = create<ZapState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       points: 1000,
       totalPredictions: 0,
       profileOverride: {},
@@ -715,47 +706,17 @@ export const useZapStore = create<ZapState>()(
           onboardingCategories: [],
         }),
     }),
-    {
-      name: "zap-store-v2",
-      version: 1,
-      skipHydration: true,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        points: state.points,
-        totalPredictions: state.totalPredictions,
-        profileOverride: state.profileOverride,
-        followingUserIds: state.followingUserIds,
-        subscribedUserIds: state.subscribedUserIds,
-        positions: state.positions,
-        likedPostIds: state.likedPostIds,
-        likedCommentIds: state.likedCommentIds,
-        bookmarkedPostIds: state.bookmarkedPostIds,
-        savedMarketIds: state.savedMarketIds,
-        affinity: state.affinity,
-        throttleEventsAt: state.throttleEventsAt,
-        cooldownEndsAt: state.cooldownEndsAt,
-        postImpressions: state.postImpressions,
-        postClicks: state.postClicks,
-        userPosts: state.userPosts,
-        commentsByPostId: state.commentsByPostId,
-        drafts: state.drafts,
-        onboarded: state.onboarded,
-        onboardingCategories: state.onboardingCategories,
-      }),
-    }
-  )
 );
 
 // ---------------- Hydration ----------------
-
-let didHydrate = false;
+//
+// Phase 10: zustand `persist` middleware was removed — the store is now
+// purely in-memory and resets on full page reload. The two hooks below
+// stay around because lots of components still call them; they're now
+// straightforward client-only flags rather than persist-tied helpers.
 
 export function useHydrateZapStore() {
-  useEffect(() => {
-    if (didHydrate) return;
-    didHydrate = true;
-    void useZapStore.persist.rehydrate();
-  }, []);
+  // No-op since there's no persisted state to rehydrate any more.
 }
 
 export function useHydrated(): boolean {

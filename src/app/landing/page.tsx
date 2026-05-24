@@ -9,7 +9,7 @@ import {
   AccordionContent,
 } from "@/components/ui/accordion";
 import { AmbientFeed } from "@/components/landing/ambient-feed";
-import { users } from "@/lib/mock-data";
+import { users } from "@/lib/fixtures";
 import { UserAvatar } from "@/components/user-avatar";
 
 export default function LandingPage() {

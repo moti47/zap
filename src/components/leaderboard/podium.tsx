@@ -6,7 +6,7 @@ import { Crown, Trophy, Medal } from "lucide-react";
 import { UserAvatar } from "../user-avatar";
 import { ExpertBadge } from "../expert-badge";
 import { ZapMark } from "../zap-logo";
-import type { User } from "@/lib/mock-data";
+import type { User } from "@/lib/fixtures";
 import { formatLargeNumber } from "@/lib/utils";
 
 interface PodiumProps {

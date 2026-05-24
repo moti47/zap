@@ -5,7 +5,7 @@ import { Zap } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { useZapStore } from "@/lib/store";
-import { markets, users, generateTrades } from "@/lib/mock-data";
+import { markets, users, generateTrades } from "@/lib/fixtures";
 
 export function DemoSeedButton() {
   const tickPrice = useZapStore((s) => s.tickPrice);

@@ -8,7 +8,7 @@ import { PostCard } from "../post/post-card";
 import { ZapMark } from "../zap-logo";
 import { CategoryTag } from "../expert-badge";
 import { useZapStore, type UserPost } from "@/lib/store";
-import { posts, getMarket, type Category, type User } from "@/lib/mock-data";
+import { posts, getMarket, type Category, type User } from "@/lib/fixtures";
 import { cn } from "@/lib/utils";
 
 export interface RealProfilePost {

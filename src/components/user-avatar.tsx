@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { cn, categoryColor } from "@/lib/utils";
-import type { Category } from "@/lib/mock-data";
+import type { Category } from "@/lib/fixtures";
 
 interface UserAvatarProps {
   src: string;

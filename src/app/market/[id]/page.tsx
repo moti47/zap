@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getMarket, markets } from "@/lib/mock-data";
+import { getMarket, markets } from "@/lib/fixtures";
 import { MarketDetailClient } from "./market-detail-client";
 import { getMarket as getMarketRow } from "@/lib/db/markets";
 import { getCurrentProfile } from "@/lib/db/profiles";

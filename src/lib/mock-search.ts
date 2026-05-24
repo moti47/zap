@@ -2,7 +2,7 @@
  * Prototype fallback for `/api/search` when Supabase isn't configured.
  * Mirrors the shape returned by `lib/db/search.searchAll`.
  */
-import { users, markets, posts, getMarket } from "./mock-data";
+import { users, markets, posts, getMarket } from "./fixtures";
 
 export interface MockSearchResults {
   query: string;

@@ -5,7 +5,7 @@ import { Info, Rocket, Flame, Clock, Heart, User as UserIcon } from "lucide-reac
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { useZapStore } from "@/lib/store";
 import { computeExposure } from "@/lib/exposure";
-import type { Post, User } from "@/lib/mock-data";
+import type { Post, User } from "@/lib/fixtures";
 import type { UserPost } from "@/lib/store";
 import { cn } from "@/lib/utils";
 

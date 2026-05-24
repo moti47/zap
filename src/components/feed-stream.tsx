@@ -7,7 +7,7 @@ import { PostCard } from "./post/post-card";
 import { PostComposer } from "./post/post-composer";
 import { FeedTabs } from "./feed-tabs";
 import { useZapStore, useHydrated, type UserPost } from "@/lib/store";
-import { posts, getUser, getMarket } from "@/lib/mock-data";
+import { posts, getUser, getMarket } from "@/lib/fixtures";
 import { computeExposure } from "@/lib/exposure";
 import { Skeleton } from "./ui/skeleton";
 
