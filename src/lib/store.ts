@@ -31,6 +31,15 @@ export interface UserTrade extends Trade {
   isMine?: boolean;
 }
 
+export interface LocalDraft {
+  id: string;
+  bodyHtml: string;
+  category?: Category | "";
+  marketId?: string;
+  images?: string[];
+  updatedAt: string;
+}
+
 export interface UserComment {
   id: string;
   postId: string;
@@ -107,6 +116,9 @@ interface ZapState {
   userPosts: UserPost[];
   commentsByPostId: Record<string, UserComment[]>;
 
+  // Phase 7 — local drafts (prototype fallback when Supabase isn't wired)
+  drafts: LocalDraft[];
+
   // Live data (not persisted)
   marketPrices: Record<
     string,
@@ -157,6 +169,10 @@ interface ZapState {
       | "follow_author",
   ) => void;
   applyThrottleCheck: (postId: string) => void;
+  upsertDraft: (
+    patch: Omit<LocalDraft, "updatedAt"> & { id?: string },
+  ) => LocalDraft;
+  deleteDraft: (id: string) => void;
   addComment: (postId: string, body: string, parentId?: string | null) => UserComment;
   setOnboarded: (v: boolean) => void;
   setOnboardingCategories: (categories: string[]) => void;
@@ -203,6 +219,7 @@ export const useZapStore = create<ZapState>()(
       postClicks: {},
       userPosts: [],
       commentsByPostId: {},
+      drafts: [],
       marketPrices: initialMarketPrices,
       recentTrades: recentTrades.map((t) => ({ ...t, isMine: false })),
       unreadNotifications: 2,
@@ -546,6 +563,26 @@ export const useZapStore = create<ZapState>()(
         }));
       },
 
+      upsertDraft: (patch) => {
+        const now = new Date().toISOString();
+        const state = get();
+        const id =
+          patch.id ?? `d-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const next: LocalDraft = {
+          id,
+          bodyHtml: patch.bodyHtml,
+          category: patch.category,
+          marketId: patch.marketId,
+          images: patch.images,
+          updatedAt: now,
+        };
+        const without = state.drafts.filter((d) => d.id !== id);
+        set({ drafts: [next, ...without].slice(0, 20) });
+        return next;
+      },
+      deleteDraft: (id) =>
+        set((s) => ({ drafts: s.drafts.filter((d) => d.id !== id) })),
+
       applyThrottleCheck: (postId) => {
         const s = get();
         const post = s.userPosts.find((p) => p.id === postId);
@@ -672,6 +709,7 @@ export const useZapStore = create<ZapState>()(
           postClicks: {},
           userPosts: [],
           commentsByPostId: {},
+          drafts: [],
           marketPrices: initialMarketPrices,
           onboarded: false,
           onboardingCategories: [],
@@ -700,6 +738,7 @@ export const useZapStore = create<ZapState>()(
         postClicks: state.postClicks,
         userPosts: state.userPosts,
         commentsByPostId: state.commentsByPostId,
+        drafts: state.drafts,
         onboarded: state.onboarded,
         onboardingCategories: state.onboardingCategories,
       }),

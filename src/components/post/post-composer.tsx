@@ -16,8 +16,9 @@ import { MarketCardCompact } from "../market/market-card-compact";
 import { AttachMarketDialog } from "../market/attach-market-dialog";
 import { RichEditor, type RichEditorHandle } from "./rich-editor";
 import { BoostControl } from "./boost-control";
+import { DraftsMenu } from "./drafts-menu";
 import { useZapStore } from "@/lib/store";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { CATEGORIES, markets, type Category } from "@/lib/mock-data";
 import { cn, categoryColor } from "@/lib/utils";
 import {
@@ -43,6 +44,8 @@ export function PostComposer({
   const router = useRouter();
   const addPost = useZapStore((s) => s.addPost);
   const balance = useZapStore((s) => s.points);
+  const upsertDraft = useZapStore((s) => s.upsertDraft);
+  const deleteDraft = useZapStore((s) => s.deleteDraft);
 
   const editorRef = useRef<RichEditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,6 +62,14 @@ export function PostComposer({
   const [boostEnabled, setBoostEnabled] = useState(false);
   const [boostAmount, setBoostAmount] = useState<BoostAmount>(BOOST_AMOUNTS[1]);
   const [boostDurationH, setBoostDurationH] = useState<BoostDurationH>(4);
+  const [editorInitialHtml, setEditorInitialHtml] = useState<string | undefined>(
+    undefined,
+  );
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
+  const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const draftSaveTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Legacy support: pick up market attached via the old catalog-redirect flow
@@ -87,12 +98,54 @@ export function PostComposer({
 
   const reset = () => {
     editorRef.current?.clear();
+    setEditorInitialHtml(undefined);
     setBodyHtml("");
     setBodyText("");
     setCategory("");
     setMarketId("");
     setImages([]);
     setBoostEnabled(false);
+    setDraftId(undefined);
+    setDraftStatus("idle");
+  };
+
+  // Auto-save draft (debounced) whenever the composer has any content.
+  useEffect(() => {
+    const isEmpty = !bodyText.trim() && images.length === 0 && !marketId && !category;
+    if (isEmpty) return;
+    if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    setDraftStatus("saving");
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const saved = upsertDraft({
+        id: draftId,
+        bodyHtml,
+        category,
+        marketId: marketId || undefined,
+        images: images.length > 0 ? images : undefined,
+      });
+      if (!draftId) setDraftId(saved.id);
+      setDraftStatus("saved");
+    }, 800);
+    return () => {
+      if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bodyHtml, category, marketId, images]);
+
+  const loadDraft = (id: string) => {
+    const { drafts } = useZapStore.getState();
+    const d = drafts.find((x) => x.id === id);
+    if (!d) return;
+    setDraftId(d.id);
+    setEditorInitialHtml(d.bodyHtml);
+    setBodyHtml(d.bodyHtml);
+    setBodyText(htmlToPlainText(d.bodyHtml));
+    setCategory(d.category ?? "");
+    setMarketId(d.marketId ?? "");
+    setImages(d.images ?? []);
+    setDraftStatus("saved");
+    toast.success("Draft restored");
+    requestAnimationFrame(() => editorRef.current?.focus());
   };
 
   const handlePublish = useCallback(() => {
@@ -134,6 +187,7 @@ export function PostComposer({
         ? `${boostAmount}⚡ boost for ${boostDurationH}h.`
         : "Your take is live on the feed.",
     });
+    if (draftId) deleteDraft(draftId);
     reset();
     onPublish?.();
     if (variant === "feed") {
@@ -155,27 +209,36 @@ export function PostComposer({
     balance,
   ]);
 
-  // Image upload helpers
-  const ingestFiles = (files: FileList | File[]) => {
+  // Image upload — posts to /api/upload (Supabase Storage when configured,
+  // otherwise data-URL fallback so the prototype demo keeps working).
+  const ingestFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (arr.length === 0) return;
     const remaining = MAX_IMAGES - images.length;
-    arr.slice(0, remaining).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        if (dataUrl) {
-          setImages((prev) =>
-            prev.length < MAX_IMAGES ? [...prev, dataUrl] : prev
-          );
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    const toUpload = arr.slice(0, remaining);
     if (arr.length > remaining) {
       toast.warning(`Max ${MAX_IMAGES} images`, {
         description: `Only the first ${remaining} were added.`,
       });
+    }
+    for (const file of toUpload) {
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const json = (await res.json()) as { url?: string; error?: string };
+        if (json.url) {
+          setImages((prev) =>
+            prev.length < MAX_IMAGES ? [...prev, json.url!] : prev,
+          );
+        } else if (json.error) {
+          toast.error("Upload failed", { description: json.error });
+        }
+      } catch (e) {
+        toast.error("Upload failed", {
+          description: e instanceof Error ? e.message : "Network error",
+        });
+      }
     }
   };
 
@@ -296,6 +359,7 @@ export function PostComposer({
           <RichEditor
             ref={editorRef}
             placeholder="What's your call?"
+            initialHtml={editorInitialHtml}
             onChange={(html, text) => {
               setBodyHtml(html);
               setBodyText(text);
@@ -392,6 +456,12 @@ export function PostComposer({
               multiple
               className="hidden"
               onChange={(e) => e.target.files && ingestFiles(e.target.files)}
+            />
+
+            <DraftsMenu
+              status={draftStatus}
+              currentDraftId={draftId}
+              onLoad={loadDraft}
             />
 
             <div className="flex-1" />
