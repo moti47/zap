@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Bell, Check, Calendar, Share2, MoreHorizontal, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -51,30 +52,54 @@ export function ProfileHero({
       ? override.avatarGradient
       : undefined;
   const coverGradient = dbProfile?.cover_gradient ?? null;
+  const bannerUrl = (dbProfile as { banner_url?: string | null } | null)?.banner_url ?? null;
 
   const [editOpen, setEditOpen] = useState(false);
 
   return (
     <div className="relative">
-      {/* Cover gradient */}
+      {/* Cover — banner image wins, gradient is fallback. */}
       <div
-        className="h-32 lg:h-40 rounded-[14px] relative overflow-hidden"
-        style={{
-          background:
-            coverGradient ||
-            `linear-gradient(135deg, ${categoryColor(
-              user.primaryCategory,
-            )}40, #14161D 70%)`,
-        }}
+        className="h-32 lg:h-44 rounded-[14px] relative overflow-hidden"
+        style={
+          !bannerUrl
+            ? {
+                background:
+                  coverGradient ||
+                  `linear-gradient(135deg, ${categoryColor(
+                    user.primaryCategory,
+                  )}40, #14161D 70%)`,
+              }
+            : undefined
+        }
       >
-        <div
-          className="absolute -top-20 right-10 w-60 h-60 rounded-full blur-3xl opacity-40"
-          style={{ background: categoryColor(user.primaryCategory) }}
-        />
-        <div
-          className="absolute -bottom-12 -left-10 w-40 h-40 rounded-full blur-2xl opacity-30"
-          style={{ background: "#FFE600" }}
-        />
+        {bannerUrl && (
+          <>
+            <Image
+              src={bannerUrl}
+              alt=""
+              aria-hidden
+              fill
+              sizes="(min-width: 1280px) 760px, 100vw"
+              priority
+              unoptimized={bannerUrl.startsWith("data:")}
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0A0B0F]/80" />
+          </>
+        )}
+        {!bannerUrl && (
+          <>
+            <div
+              className="absolute -top-20 right-10 w-60 h-60 rounded-full blur-3xl opacity-40"
+              style={{ background: categoryColor(user.primaryCategory) }}
+            />
+            <div
+              className="absolute -bottom-12 -left-10 w-40 h-40 rounded-full blur-2xl opacity-30"
+              style={{ background: "#FFE600" }}
+            />
+          </>
+        )}
       </div>
 
       {/* Profile body */}
@@ -205,6 +230,7 @@ export function ProfileHero({
           initialBio={displayBio ?? ""}
           initialAvatarUrl={dbAvatarUrl}
           initialCoverGradient={coverGradient}
+          initialBannerUrl={bannerUrl}
           hasBackend={!!dbProfile}
           username={dbProfile?.username ?? user.username}
         />

@@ -13,9 +13,14 @@ export default async function SavedPage() {
   let initialMarkets: SavedMarketShape[] | null = null;
 
   try {
-    const me = await getCurrentProfile();
+    // Parallel: profile lookup + bookmarks fetch. listMyBookmarks
+    // re-reads auth.getUser() so it's safe to fire alongside the
+    // profile check.
+    const [me, bundle] = await Promise.all([
+      getCurrentProfile(),
+      listMyBookmarks().catch(() => ({ posts: [], markets: [] })),
+    ]);
     if (me) {
-      const bundle = await listMyBookmarks();
       initialPosts = bundle.posts.map((p) => ({
         id: p.id,
         body_html: p.body_html,

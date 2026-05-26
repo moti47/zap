@@ -49,6 +49,7 @@ export async function updateMyProfile(patch: Partial<ProfileRow>) {
     bio: patch.bio,
     avatar_url: patch.avatar_url,
     cover_gradient: patch.cover_gradient,
+    banner_url: patch.banner_url,
     onboarded: patch.onboarded,
     affinity: patch.affinity,
   };

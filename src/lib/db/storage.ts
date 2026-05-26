@@ -64,3 +64,34 @@ export async function uploadAvatar(file: File): Promise<{ url: string }> {
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
   return { url: data.publicUrl };
 }
+
+/**
+ * Section 22B — upload a profile banner (3:1) to the `banners` bucket.
+ * Same RLS shape as avatars/post-images. The caller persists the URL
+ * onto `profiles.banner_url`.
+ */
+export async function uploadBanner(file: File): Promise<{ url: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+
+  const ext =
+    file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
+    (file.type.split("/")[1] ?? "jpg");
+  const rand = Math.random().toString(36).slice(2, 8);
+  const path = `${user.id}/banner-${Date.now()}-${rand}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("banners")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from("banners").getPublicUrl(path);
+  return { url: data.publicUrl };
+}

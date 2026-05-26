@@ -329,7 +329,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
             }}
             colors={TEXT_COLORS}
             onPick={(c) => {
-              editor.chain().focus().setColor(c).run();
+              if (c == null) {
+                editor.chain().focus().unsetColor().run();
+              } else {
+                editor.chain().focus().setColor(c).run();
+              }
               setColorOpen(false);
             }}
             onClear={() => editor.chain().focus().unsetColor().run()}

@@ -1,8 +1,37 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { signInWithPassword, signInWithMagicLink } from "../actions";
+
+/**
+ * Wipe any lingering Supabase auth state from localStorage. The
+ * @supabase/ssr client uses cookies, but older client code (or a
+ * stale window opened before the migration) may have left tokens in
+ * localStorage that the browser auth helper would otherwise re-hydrate.
+ */
+function purgeLocalAuthResidue() {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith("sb-") ||
+          k.startsWith("supabase.") ||
+          k === "supabase.auth.token")
+      ) {
+        keys.push(k);
+      }
+    }
+    keys.forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    // Some browsers throw when storage is disabled (incognito quota
+    // exhaustion). Safe to swallow — middleware + cookies are the
+    // real boundary.
+  }
+}
 
 export function SignInForm({
   next,
@@ -16,6 +45,13 @@ export function SignInForm({
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [error, setError] = useState<string | undefined>(initialError);
   const [pending, startTransition] = useTransition();
+
+  // Belt-and-suspenders: any time the user lands on the sign-in page,
+  // assume they've just logged out (or are recovering from a stale
+  // session) and wipe any localStorage Supabase residue.
+  useEffect(() => {
+    purgeLocalAuthResidue();
+  }, []);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

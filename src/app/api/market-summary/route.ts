@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser, NotSignedInError } from "@/lib/auth";
 
 const cache = new Map<string, { summary: string; expires: number }>();
 const TTL_MS = 10 * 60 * 1000;
@@ -67,6 +68,21 @@ function richFallback(args: {
 }
 
 export async function POST(req: NextRequest) {
+  // Gate the LLM endpoint behind auth so anonymous traffic can't burn
+  // platform Anthropic credits. The cache also reduces hot-path cost.
+  const haveSupabaseEnv =
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (haveSupabaseEnv) {
+    try {
+      await requireUser();
+    } catch (err) {
+      if (err instanceof NotSignedInError) {
+        return NextResponse.json({ error: err.message }, { status: 401 });
+      }
+      throw err;
+    }
+  }
   const body = await req.json();
   const {
     marketId,

@@ -11,7 +11,10 @@ export type NotificationKind =
   | "mention"
   | "trade"
   | "market_resolved"
-  | "boost_ended";
+  | "boost_ended"
+  // Phase 11+ — market proposal verdicts
+  | "market_proposal_approved"
+  | "market_proposal_rejected";
 
 export interface NotificationPayload {
   actor_id?: string;
@@ -26,6 +29,9 @@ export interface NotificationPayload {
   title?: string;
   body?: string;
   href?: string;
+  // Phase 11+ — proposal verdicts
+  proposal_id?: string;
+  reason?: string;
 }
 
 export type NotificationWithPayload = Omit<NotificationRow, "payload"> & {

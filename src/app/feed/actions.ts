@@ -6,6 +6,7 @@ import {
   type NotificationPayload,
 } from "@/lib/db/notifications";
 import { getCurrentProfile } from "@/lib/db/profiles";
+import { requireUser, NotSignedInError } from "@/lib/auth";
 
 /**
  * Phase 9 — Fan out @mention notifications when a post is published.
@@ -21,6 +22,7 @@ export async function notifyMentionsAction(input: {
   excerpt?: string;
 }): Promise<{ ok: boolean; notified?: number; error?: string }> {
   try {
+    await requireUser();
     const usernames = Array.from(
       new Set(
         (input.usernames || [])
@@ -60,6 +62,9 @@ export async function notifyMentionsAction(input: {
 
     return { ok: true, notified: profiles.length };
   } catch (err) {
+    if (err instanceof NotSignedInError) {
+      return { ok: false, error: err.message };
+    }
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

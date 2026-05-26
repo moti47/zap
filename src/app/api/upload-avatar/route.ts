@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { uploadAvatar } from "@/lib/db/storage";
+import { requireUser, NotSignedInError } from "@/lib/auth";
 
 /**
  * POST /api/upload-avatar — multipart form, field `file`.
@@ -21,6 +22,19 @@ const ALLOWED = new Set([
 
 export async function POST(req: Request) {
   try {
+    const haveEnv =
+      !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (haveEnv) {
+      try {
+        await requireUser();
+      } catch (err) {
+        if (err instanceof NotSignedInError) {
+          return NextResponse.json({ error: err.message }, { status: 401 });
+        }
+        throw err;
+      }
+    }
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -38,9 +52,6 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const haveEnv =
-      !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!haveEnv) {
       const buf = Buffer.from(await file.arrayBuffer());
       const url = `data:${file.type || "image/png"};base64,${buf.toString(

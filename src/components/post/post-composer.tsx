@@ -18,6 +18,8 @@ import { RichEditor, type RichEditorHandle } from "./rich-editor";
 import { BoostControl } from "./boost-control";
 import { DraftsMenu } from "./drafts-menu";
 import { MentionPopover } from "./mention-popover";
+import { CategoryPicker } from "./category-picker";
+import { ChevronRight } from "lucide-react";
 import { useZapStore } from "@/lib/store";
 import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { extractMentions } from "@/lib/mentions";
@@ -75,6 +77,9 @@ export function PostComposer({
   const draftSaveTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const publishLockRef = useRef(false);
 
   // Legacy support: pick up market attached via the old catalog-redirect flow
   // (?attachMarket=…) so deep links don't break.
@@ -153,6 +158,9 @@ export function PostComposer({
   };
 
   const handlePublish = useCallback(() => {
+    // Duplicate-submit guard. The ref handles the synchronous case
+    // (rapid Cmd+Enter spam); the state drives the button UI.
+    if (publishLockRef.current || isPublishing) return;
     if (!hasBody) {
       toast.error("Write something first");
       return;
@@ -176,16 +184,29 @@ export function PostComposer({
       });
       return;
     }
+    publishLockRef.current = true;
+    setIsPublishing(true);
     const cleanHtml = sanitizeHtml(bodyHtml);
     const willBoost = boostEnabled && boostAmount <= balance;
-    const newPost = addPost({
-      body: cleanHtml,
-      category: category as Category,
-      marketId: marketId || undefined,
-      images: images.length > 0 ? images : undefined,
-      boostZaps: willBoost ? boostAmount : undefined,
-      boostDurationH: willBoost ? boostDurationH : undefined,
-    });
+    let newPost;
+    try {
+      newPost = addPost({
+        body: cleanHtml,
+        category: category as Category,
+        marketId: marketId || undefined,
+        images: images.length > 0 ? images : undefined,
+        boostZaps: willBoost ? boostAmount : undefined,
+        boostDurationH: willBoost ? boostDurationH : undefined,
+      });
+    } catch (err) {
+      publishLockRef.current = false;
+      setIsPublishing(false);
+      const message = err instanceof Error ? err.message : "Couldn't publish";
+      toast.error(message, {
+        description: "Your draft is still saved — try again in a moment.",
+      });
+      return;
+    }
     // Phase 9 — fire @mention notifications (best-effort, fails silently
     // when there's no Supabase backend wired).
     const mentioned = extractMentions(bodyText);
@@ -209,6 +230,12 @@ export function PostComposer({
     } else {
       router.push("/feed");
     }
+    // Release the publish lock after a short cooldown so accidental
+    // double-clicks during the toast animation can't fire a 2nd insert.
+    window.setTimeout(() => {
+      publishLockRef.current = false;
+      setIsPublishing(false);
+    }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasBody,
@@ -221,6 +248,7 @@ export function PostComposer({
     boostAmount,
     boostDurationH,
     balance,
+    isPublishing,
   ]);
 
   // Image upload — posts to /api/upload (Supabase Storage when configured,
@@ -313,56 +341,84 @@ export function PostComposer({
             </button>
           )}
         </div>
-        <motion.div
-          role="radiogroup"
-          aria-label="Post category"
+        <motion.button
+          type="button"
+          aria-label="Pick a category"
           aria-required="true"
+          aria-haspopup="dialog"
+          onClick={() => setCategoryPickerOpen(true)}
           className={cn(
-            "flex flex-wrap gap-1.5 p-2 rounded-md border transition-colors",
+            "group w-full flex items-center gap-3 p-3 rounded-[12px] border transition-all text-left",
             category
               ? "border-transparent"
               : pulseCategory
               ? "border-[#FFE600] bg-[#FFE600]/8 shadow-[0_0_0_4px_rgba(255,230,0,0.12)]"
               : "border-dashed border-[#2A2F3D] hover:border-[#353B4D]"
           )}
-          animate={
-            pulseCategory
-              ? { scale: [1, 1.01, 1] }
-              : { scale: 1 }
-          }
+          animate={pulseCategory ? { scale: [1, 1.01, 1] } : { scale: 1 }}
           transition={{ duration: 0.5, repeat: pulseCategory ? 2 : 0 }}
+          style={
+            category
+              ? {
+                  borderColor: `${categoryColor(category)}66`,
+                  background: `linear-gradient(135deg, ${categoryColor(
+                    category,
+                  )}10, transparent 60%)`,
+                  boxShadow: `0 0 0 2px ${categoryColor(category)}22`,
+                }
+              : undefined
+          }
         >
-          {CATEGORIES.map((c) => {
-            const active = category === c;
-            const color = categoryColor(c);
-            return (
-              <button
-                key={c}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setCategory(c)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full border text-[13px] font-semibold capitalize transition-all",
-                  active ? "scale-[1.03]" : "hover:scale-[1.02]"
-                )}
+          {category ? (
+            <>
+              <div
+                className="h-9 w-9 rounded-[10px] grid place-items-center text-base shrink-0"
                 style={{
-                  borderColor: active ? color : "#2A2F3D",
-                  color: active ? color : "#8B92A8",
-                  background: active ? `${color}14` : "transparent",
-                  boxShadow: active ? `0 0 0 2px ${color}33` : undefined,
+                  background: `${categoryColor(category)}22`,
+                  border: `1px solid ${categoryColor(category)}40`,
                 }}
               >
                 <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ background: color }}
+                  className="h-3 w-3 rounded-full"
+                  style={{ background: categoryColor(category) }}
                 />
-                {c}
-              </button>
-            );
-          })}
-        </motion.div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div
+                  className="text-[14px] font-bold capitalize"
+                  style={{ color: categoryColor(category) }}
+                >
+                  {category}
+                </div>
+                <div className="text-[11px] text-[#8B92A8]">
+                  Tap to change category
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="h-9 w-9 rounded-[10px] grid place-items-center bg-[#FFE600]/10 border border-[#FFE600]/30 shrink-0">
+                <Sparkles className="h-4 w-4 text-[#FFE600]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-semibold text-white">
+                  Pick a category
+                </div>
+                <div className="text-[11px] text-[#8B92A8]">
+                  Required — choose where your post lives
+                </div>
+              </div>
+            </>
+          )}
+          <ChevronRight className="h-4 w-4 text-[#5A6175] group-hover:text-white shrink-0" />
+        </motion.button>
       </div>
+      <CategoryPicker
+        open={categoryPickerOpen}
+        onClose={() => setCategoryPickerOpen(false)}
+        value={category}
+        onChange={(c) => setCategory(c)}
+      />
 
       <div className="mt-4 flex gap-3">
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#FFB800] to-[#FF8A3D] flex items-center justify-center text-[#0A0B0F] font-bold flex-shrink-0">
@@ -502,12 +558,14 @@ export function PostComposer({
             <Button
               size="sm"
               onClick={handlePublish}
-              disabled={!canPublish}
+              disabled={!canPublish || isPublishing}
               className="h-7"
               title={!canPublish ? publishLabel : "Cmd/Ctrl+Enter"}
             >
               <Send className="h-3 w-3" />
-              {!hasBody
+              {isPublishing
+                ? "Posting…"
+                : !hasBody
                 ? "Post"
                 : !category
                 ? "Pick a category"

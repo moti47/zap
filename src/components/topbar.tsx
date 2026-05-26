@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { useZapStore, useHydrated } from "@/lib/store";
+import { useViewer } from "@/lib/use-viewer";
+import { UserAvatar } from "./user-avatar";
 import { ZapLogo, ZapMark } from "./zap-logo";
 import { NotificationBell } from "./notification-bell";
 import { Input } from "./ui/input";
@@ -48,15 +50,26 @@ const navItems = [
   },
   { href: "/leaderboard", label: "Leaderboard", match: (p: string) => p.startsWith("/leaderboard") },
   { href: "/saved", label: "Saved", match: (p: string) => p.startsWith("/saved") },
+  { href: "/quests", label: "Quests", match: (p: string) => p.startsWith("/quests") },
+  { href: "/propose", label: "Propose", match: (p: string) => p.startsWith("/propose") },
 ];
 
 export function Topbar() {
   const points = useZapStore((s) => s.points);
   const hydrated = useHydrated();
   const pathname = usePathname();
+  const { viewer } = useViewer();
   const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Show the persisted Zaps balance from the profiles row when the
+  // user is signed-in via Supabase. Falls through to the local Zustand
+  // balance (prototype demo path) otherwise.
+  const displayPoints = viewer ? viewer.zaps : points;
+  const displayName = viewer?.name ?? "You";
+  const displayUsername = viewer?.username ?? "you";
+  const displayInitial = (displayName || "Y").charAt(0).toUpperCase();
 
   // Cmd/Ctrl-K toggles the global search dialog.
   useEffect(() => {
@@ -123,13 +136,44 @@ export function Topbar() {
 
           {/* Right cluster */}
           <div className="flex items-center gap-1.5 lg:gap-2 shrink-0">
+            {/* Anonymous branch — no fake profile chip, no Zaps pill,
+                no compose. Just two clear CTAs. */}
+            {!viewer && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSearchOpen(true)}
+                  aria-label="Search"
+                  className="hidden sm:inline-flex"
+                >
+                  <Search className="h-5 w-5" />
+                </Button>
+                <Link
+                  href={`/auth/sign-in?next=${encodeURIComponent(pathname || "/")}`}
+                  className="inline-flex items-center h-8 px-3 rounded-md text-[12.5px] font-semibold text-white hover:bg-[#20232E] transition-colors"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href={`/auth/sign-up?next=${encodeURIComponent(pathname || "/")}`}
+                  className="inline-flex items-center h-8 px-3 rounded-md text-[12.5px] font-bold bg-[#FFE600] text-[#0E1016] hover:scale-[1.03] active:scale-95 transition-transform"
+                >
+                  Create account
+                </Link>
+              </>
+            )}
+
+            {/* Signed-in branch — everything below. */}
+            {viewer && (
+            <>
             {/* Balance pill — md+ */}
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-md border border-[#2A2F3D] bg-[#14161D]">
               <span className="text-[10px] uppercase tracking-widest text-[#5A6175] font-mono">
                 Balance
               </span>
               <span className="text-sm font-bold num">
-                {hydrated ? points.toLocaleString() : "1,000"}
+                {hydrated ? displayPoints.toLocaleString() : "50"}
               </span>
               <ZapMark />
             </div>
@@ -187,17 +231,34 @@ export function Topbar() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="h-8 w-8 rounded-full bg-gradient-to-br from-[#FFB800] to-[#FF8A3D] flex items-center justify-center text-[#0A0B0F] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#FFE600] focus:ring-offset-2 focus:ring-offset-[#0A0B0F]"
+                  className="rounded-full focus:outline-none focus:ring-2 focus:ring-[#FFE600] focus:ring-offset-2 focus:ring-offset-[#0A0B0F]"
                   aria-label="Profile menu"
                 >
-                  Y
+                  {viewer?.avatar_url ? (
+                    <UserAvatar
+                      src={viewer.avatar_url}
+                      name={displayName}
+                      size="sm"
+                      showScore={false}
+                      cacheKey={viewer.updated_at}
+                      priority
+                    />
+                  ) : (
+                    <span className="block h-8 w-8 rounded-full bg-gradient-to-br from-[#FFB800] to-[#FF8A3D] grid place-items-center text-[#0A0B0F] font-bold text-sm">
+                      {displayInitial}
+                    </span>
+                  )}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col">
-                    <span className="text-white font-semibold text-sm">You</span>
-                    <span className="text-[11px] font-mono text-[#5A6175]">@you</span>
+                    <span className="text-white font-semibold text-sm">
+                      {displayName}
+                    </span>
+                    <span className="text-[11px] font-mono text-[#5A6175]">
+                      @{displayUsername}
+                    </span>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -221,31 +282,23 @@ export function Topbar() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  // The DropdownMenuItem already renders as a button via
-                  // Radix, so embedding another `<button>` inside it would
-                  // trigger React's "<button> cannot appear as a descendant
-                  // of <button>" hydration warning. We bypass that by
-                  // submitting the form imperatively via a form ref.
+                  // Hard-navigate to the sign-out route. The route now
+                  // accepts GET, clears every sb-* cookie, and 303s back
+                  // to /auth/sign-in. No nested form/button, no
+                  // hydration warnings, no ghost sessions.
                   onSelect={(e) => {
                     e.preventDefault();
-                    (document.getElementById(
-                      "topbar-signout-form",
-                    ) as HTMLFormElement | null)?.requestSubmit();
+                    window.location.href = "/auth/sign-out";
                   }}
-                  className="cursor-pointer"
+                  className="cursor-pointer text-[#FF4757] focus:text-[#FF4757]"
                 >
-                  <form
-                    id="topbar-signout-form"
-                    action="/auth/sign-out"
-                    method="post"
-                    className="w-full flex items-center text-[#FF4757]"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign Out
-                  </form>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </>
+            )}
           </div>
         </div>
       </header>
@@ -300,34 +353,57 @@ export function Topbar() {
                 );
               })}
               <div className="border-t border-[#2A2F3D] my-3" />
-              <Link
-                href="/profile/you"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center px-3 py-2.5 rounded-md text-[15px] font-medium text-[#8B92A8] hover:text-white hover:bg-[#20232E]/40"
-              >
-                <UserIcon className="h-4 w-4 mr-3" /> My Profile
-              </Link>
-              <Link
-                href="/notifications"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center px-3 py-2.5 rounded-md text-[15px] font-medium text-[#8B92A8] hover:text-white hover:bg-[#20232E]/40"
-              >
-                Notifications
-              </Link>
-            </nav>
-            <div className="p-4 border-t border-[#2A2F3D]">
-              <div className="rounded-md border border-[#FFB800]/20 bg-gradient-to-br from-[#1F1A0E] to-[#1A1D26] p-3">
-                <div className="text-[10px] uppercase tracking-widest text-[#8B92A8] font-mono">
-                  Your Balance
+              {viewer ? (
+                <>
+                  <Link
+                    href="/profile/you"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center px-3 py-2.5 rounded-md text-[15px] font-medium text-[#8B92A8] hover:text-white hover:bg-[#20232E]/40"
+                  >
+                    <UserIcon className="h-4 w-4 mr-3" /> My Profile
+                  </Link>
+                  <Link
+                    href="/notifications"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center px-3 py-2.5 rounded-md text-[15px] font-medium text-[#8B92A8] hover:text-white hover:bg-[#20232E]/40"
+                  >
+                    Notifications
+                  </Link>
+                </>
+              ) : (
+                <div className="px-1 space-y-2">
+                  <Link
+                    href={`/auth/sign-up?next=${encodeURIComponent(pathname || "/")}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center px-3 py-2.5 rounded-md text-[14px] font-bold bg-[#FFE600] text-[#0E1016]"
+                  >
+                    Create account
+                  </Link>
+                  <Link
+                    href={`/auth/sign-in?next=${encodeURIComponent(pathname || "/")}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center px-3 py-2.5 rounded-md text-[14px] font-semibold text-white border border-[#2A2F3D]"
+                  >
+                    Sign in
+                  </Link>
                 </div>
-                <div className="mt-1 flex items-baseline gap-1">
-                  <span className="text-xl font-bold tracking-tight num text-white">
-                    {hydrated ? points.toLocaleString() : "1,000"}
-                  </span>
-                  <ZapMark />
+              )}
+            </nav>
+            {viewer && (
+              <div className="p-4 border-t border-[#2A2F3D]">
+                <div className="rounded-md border border-[#FFB800]/20 bg-gradient-to-br from-[#1F1A0E] to-[#1A1D26] p-3">
+                  <div className="text-[10px] uppercase tracking-widest text-[#8B92A8] font-mono">
+                    Your Balance
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-xl font-bold tracking-tight num text-white">
+                      {hydrated ? displayPoints.toLocaleString() : "50"}
+                    </span>
+                    <ZapMark />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </motion.aside>
         </motion.div>
       )}

@@ -26,18 +26,28 @@ import { currentUser, getMarket, getUser, type Post } from "@/lib/fixtures";
 import { cn, timeAgo, formatLargeNumber } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { SellSheet } from "../market/sell-sheet";
+import { useRequireSignIn } from "@/lib/require-sign-in";
+
+import type { PersonalizedBreakdown } from "@/lib/ranking";
 
 interface PostCardProps {
   post: Post | UserPost;
   isNew?: boolean;
   defaultThreadOpen?: boolean;
+  /** Phase 11+: the ranking breakdown captured at snapshot time. */
+  rankingBreakdown?: PersonalizedBreakdown;
 }
 
 function isUserPost(p: Post | UserPost): p is UserPost {
   return p.type === "user";
 }
 
-export function PostCard({ post, isNew = false, defaultThreadOpen = false }: PostCardProps) {
+export function PostCard({
+  post,
+  isNew = false,
+  defaultThreadOpen = false,
+  rankingBreakdown,
+}: PostCardProps) {
   const isMineFlag = isUserPost(post);
   const user = isMineFlag ? currentUser : getUser(post.userId);
   const liked = useZapStore((s) => s.likedPostIds.includes(post.id));
@@ -53,6 +63,10 @@ export function PostCard({ post, isNew = false, defaultThreadOpen = false }: Pos
   const [threadOpen, setThreadOpen] = useState(defaultThreadOpen);
   const [floatHeart, setFloatHeart] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
+
+  // Anonymous users see the buttons but ANY click bounces them to
+  // sign-in. Keeps the UI feeling real and complete.
+  const gate = useRequireSignIn();
 
   const articleRef = useRef<HTMLElement>(null);
   const impressionLoggedRef = useRef(false);
@@ -94,14 +108,16 @@ export function PostCard({ post, isNew = false, defaultThreadOpen = false }: Pos
   const boostActive =
     !!userPost?.boostUntil && new Date(userPost.boostUntil).getTime() > Date.now();
 
-  const handleLike = () => {
+  const handleLike = gate(() => {
     if (!liked) {
       setFloatHeart(true);
       setTimeout(() => setFloatHeart(false), 700);
       if (explainCategory) bumpAffinity(explainCategory, "like");
     }
     toggleLike(post.id);
-  };
+  });
+  const handleBookmark = gate(() => toggleBookmark(post.id));
+  const handleCommentToggle = gate(() => setThreadOpen((v) => !v));
 
   const handleClickThrough = () => {
     recordClick(post.id);
@@ -214,7 +230,12 @@ export function PostCard({ post, isNew = false, defaultThreadOpen = false }: Pos
               : ` · ${formatLargeNumber(post.views)} views`}
           </div>
         </div>
-        <ExposureExplain post={post} author={user} category={explainCategory} />
+        <ExposureExplain
+          post={post}
+          author={user}
+          category={explainCategory}
+          rankingBreakdown={rankingBreakdown}
+        />
         <button className="text-[#5A6175] hover:text-white p-1.5" aria-label="More">
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -301,7 +322,7 @@ export function PostCard({ post, isNew = false, defaultThreadOpen = false }: Pos
       {/* Footer engagement */}
       <div className="flex items-center pt-3.5 mt-3.5 border-t border-[#2A2F3D] text-[#8B92A8]">
         <button
-          onClick={() => setThreadOpen((v) => !v)}
+          onClick={handleCommentToggle}
           className={cn(
             "inline-flex items-center gap-2 font-mono text-xs py-1.5 pr-4 transition-colors",
             threadOpen ? "text-[#FFE600]" : "hover:text-white"
@@ -349,7 +370,8 @@ export function PostCard({ post, isNew = false, defaultThreadOpen = false }: Pos
           aria-label={bookmarked ? "Remove bookmark" : "Bookmark post"}
           aria-pressed={bookmarked}
           onClick={() => {
-            toggleBookmark(post.id);
+            const next = handleBookmark();
+            if (next === undefined && !bookmarked) return; // gated away
             toast.success(bookmarked ? "Removed from saved" : "Saved");
           }}
           className={cn(

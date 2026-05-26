@@ -36,6 +36,9 @@ const ICONS: Record<string, typeof Bell> = {
   trade: TrendingUp,
   market_resolved: Trophy,
   boost_ended: Rocket,
+  // Phase 11+ — market proposal verdicts
+  market_proposal_approved: Trophy,
+  market_proposal_rejected: AtSign,
 };
 
 const COLORS: Record<string, string> = {
@@ -47,6 +50,8 @@ const COLORS: Record<string, string> = {
   trade: "#00D982",
   market_resolved: "#FFB800",
   boost_ended: "#FF8A3D",
+  market_proposal_approved: "#36D399",
+  market_proposal_rejected: "#FF4757",
 };
 
 function hrefFor(n: NotificationWithPayload): string {
@@ -54,6 +59,9 @@ function hrefFor(n: NotificationWithPayload): string {
   if (p.href) return p.href;
   if (p.post_id) return `/feed#post-${p.post_id}`;
   if (p.market_id) return `/market/${p.market_id}`;
+  if (n.type === "market_proposal_approved" || n.type === "market_proposal_rejected") {
+    return "/propose";
+  }
   if (p.actor_username) return `/profile/${p.actor_username}`;
   return "/notifications";
 }
@@ -78,6 +86,10 @@ function titleFor(n: NotificationWithPayload): string {
       return `Market resolved ${p.outcome?.toUpperCase() ?? ""}`;
     case "boost_ended":
       return `Your boost ended`;
+    case "market_proposal_approved":
+      return `Your market proposal was approved`;
+    case "market_proposal_rejected":
+      return `Your market proposal was rejected`;
     default:
       return p.title || "New activity";
   }

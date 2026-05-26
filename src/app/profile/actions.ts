@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { updateMyProfile } from "@/lib/db/profiles";
+import { requireUser, NotSignedInError } from "@/lib/auth";
 
 export interface ProfilePatch {
   name?: string;
   bio?: string | null;
   avatar_url?: string | null;
   cover_gradient?: string | null;
+  banner_url?: string | null;
 }
 
 /**
@@ -24,6 +26,7 @@ export async function updateMyProfileAction(
   error?: string;
 }> {
   try {
+    await requireUser();
     const cleaned: ProfilePatch = {};
     if (typeof patch.name === "string") {
       const trimmed = patch.name.trim().slice(0, 50);
@@ -40,6 +43,9 @@ export async function updateMyProfileAction(
     if (patch.cover_gradient !== undefined) {
       cleaned.cover_gradient = patch.cover_gradient || null;
     }
+    if (patch.banner_url !== undefined) {
+      cleaned.banner_url = patch.banner_url || null;
+    }
 
     const profile = await updateMyProfile(cleaned);
 
@@ -48,6 +54,9 @@ export async function updateMyProfileAction(
 
     return { ok: true, profile };
   } catch (err) {
+    if (err instanceof NotSignedInError) {
+      return { ok: false, error: err.message };
+    }
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };
   }

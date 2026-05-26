@@ -22,10 +22,21 @@ export interface ProfileRow {
   bio: string | null;
   avatar_url: string | null;
   cover_gradient: string | null;
+  /** Phase 11+ — uploaded 3:1 profile banner. Wins over cover_gradient when set. */
+  banner_url: string | null;
+  /** Phase 11+ — 'user' | 'admin'. Only ADMIN_USER_ID may hold 'admin'. */
+  role: "user" | "admin";
   zaps: number;
   total_predictions: number;
   affinity: Record<string, number> | null;
   onboarded: boolean;
+  /** Phase 11+ — streak columns from migration 0003 */
+  current_streak: number;
+  longest_streak: number;
+  last_active_day: string | null;
+  recoveries_available: number;
+  recovery_history: string[];
+  pending_recovery_for: string | null;
   created_at: string;
 }
 

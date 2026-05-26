@@ -34,21 +34,16 @@ export default async function ProfilePage({ params }: PageParams) {
   let dbViewer: ProfileRow | null = null;
   let realPosts: RealProfilePost[] | null = null;
 
-  try {
-    dbViewer = await getCurrentProfile();
-  } catch {
-    dbViewer = null;
-  }
-
-  if (username === "you") {
-    dbProfile = dbViewer;
-  } else {
-    try {
-      dbProfile = await getProfileByUsername(username);
-    } catch {
-      dbProfile = null;
-    }
-  }
+  // Parallel: viewer profile + (optional) other user's profile.
+  // When viewing /profile/you we don't need a second lookup at all.
+  const [viewerResult, otherResult] = await Promise.all([
+    getCurrentProfile().catch(() => null),
+    username === "you"
+      ? Promise.resolve(null)
+      : getProfileByUsername(username).catch(() => null),
+  ]);
+  dbViewer = viewerResult;
+  dbProfile = username === "you" ? viewerResult : otherResult;
 
   const isMe =
     username === "you" || (!!dbViewer && !!dbProfile && dbViewer.id === dbProfile.id);

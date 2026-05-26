@@ -9,6 +9,33 @@ import {
   checkThrottle,
   type AffinitySignal,
 } from "./exposure";
+import {
+  EMPTY_GRAPH,
+  applySignal,
+  type AffinityGraph,
+  type Signal,
+  type SignalContext,
+} from "./affinity";
+import {
+  EMPTY_SESSION,
+  bumpSessionCategory,
+  type SessionState,
+} from "./ranking";
+import {
+  FRESH_STREAK,
+  tickStreak,
+  applyRecovery,
+  milestoneBonus,
+  type StreakState,
+} from "./streaks";
+import {
+  pickDailyQuests,
+  questProgressFromCounts,
+  todayKey,
+  type ActiveQuest,
+  type QuestKind,
+  type QuestProgress,
+} from "./quests";
 
 export interface Position {
   marketId: string;
@@ -104,6 +131,26 @@ interface ZapState {
   postImpressions: Record<string, number>;
   postClicks: Record<string, number>;
 
+  // Phase 11+ — Multi-layer interest graph + session state
+  affinityGraph: AffinityGraph;
+  session: SessionState;
+
+  // Phase 11+ — Streak + daily quests
+  streak: StreakState;
+  questDay: string; // YYYY-MM-DD that the active quests were generated for
+  activeQuests: ActiveQuest[];
+  questCounts: Partial<Record<QuestKind, number>>;
+  questClaimed: Partial<Record<QuestKind, boolean>>;
+
+  // Phase 11+ — Zap ledger (recent N entries shown in UI)
+  zapLedger: Array<{
+    id: string;
+    delta: number;
+    reason: string;
+    balanceAfter: number;
+    at: string;
+  }>;
+
   // User-created
   userPosts: UserPost[];
   commentsByPostId: Record<string, UserComment[]>;
@@ -161,8 +208,21 @@ interface ZapState {
       | "follow_author",
   ) => void;
   applyThrottleCheck: (postId: string) => void;
+  // Phase 11+ — Multi-layer signal application
+  applySignal: (signal: Signal, ctx: SignalContext) => void;
+  bumpSessionCategory: (category: string, step?: number) => void;
+  // Phase 11+ — Streaks
+  touchStreak: () => { delta: string; reward: number; milestoneHit: number | null };
+  spendRecovery: () => boolean;
+  // Phase 11+ — Quests
+  ensureDailyQuests: () => void;
+  bumpQuest: (kind: QuestKind, delta?: number) => void;
+  claimQuest: (kind: QuestKind) => number; // returns Zaps credited
+  // Phase 11+ — Zap economy
+  earnZaps: (amount: number, reason: string) => void;
+  spendZaps: (amount: number, reason: string) => boolean;
   upsertDraft: (
-    patch: Omit<LocalDraft, "updatedAt"> & { id?: string },
+    patch: Omit<LocalDraft, "updatedAt" | "id"> & { id?: string },
   ) => LocalDraft;
   deleteDraft: (id: string) => void;
   addComment: (postId: string, body: string, parentId?: string | null) => UserComment;
@@ -193,7 +253,9 @@ markets.forEach((m) => {
 
 export const useZapStore = create<ZapState>()(
   (set, get) => ({
-      points: 1000,
+      // Phase 11+: new users start with 50 Zaps. The 1000 starting balance
+      // was abused during onboarding — earn the rest via quests/streaks.
+      points: 50,
       totalPredictions: 0,
       profileOverride: {},
       followingUserIds: [],
@@ -208,6 +270,14 @@ export const useZapStore = create<ZapState>()(
       cooldownEndsAt: null,
       postImpressions: {},
       postClicks: {},
+      affinityGraph: EMPTY_GRAPH,
+      session: EMPTY_SESSION,
+      streak: FRESH_STREAK,
+      questDay: "",
+      activeQuests: [],
+      questCounts: {},
+      questClaimed: {},
+      zapLedger: [],
       userPosts: [],
       commentsByPostId: {},
       drafts: [],
@@ -223,6 +293,8 @@ export const useZapStore = create<ZapState>()(
         const state = get();
         const cost = Math.round((shares * price) / 100);
         if (cost > state.points) return;
+        // count trade quest before the rest of the work
+        get().bumpQuest("trade_market");
         const existing = state.positions.find(
           (p) => p.marketId === marketId && p.side === side
         );
@@ -349,6 +421,11 @@ export const useZapStore = create<ZapState>()(
             ? state.followingUserIds.filter((id) => id !== userId)
             : [...state.followingUserIds, userId],
         });
+        if (!following) {
+          // newly followed
+          get().bumpQuest("follow_1");
+          get().applySignal("follow_author", { authorId: userId });
+        }
       },
 
       toggleSubscribe: (userId) => {
@@ -385,6 +462,10 @@ export const useZapStore = create<ZapState>()(
               ? updateAffinity(state.affinity, category, "like")
               : state.affinity,
         });
+        if (!wasLiked) {
+          get().bumpQuest("like_5");
+          if (category) get().applySignal("like", { category });
+        }
       },
 
       toggleCommentLike: (commentId) => {
@@ -398,11 +479,13 @@ export const useZapStore = create<ZapState>()(
 
       toggleBookmarkPost: (postId) => {
         const state = get();
+        const wasBookmarked = state.bookmarkedPostIds.includes(postId);
         set({
-          bookmarkedPostIds: state.bookmarkedPostIds.includes(postId)
+          bookmarkedPostIds: wasBookmarked
             ? state.bookmarkedPostIds.filter((id) => id !== postId)
             : [...state.bookmarkedPostIds, postId],
         });
+        if (!wasBookmarked) get().bumpQuest("save_3");
       },
 
       toggleSaveMarket: (marketId) => {
@@ -503,10 +586,28 @@ export const useZapStore = create<ZapState>()(
           throttled: false,
           boostEarlyStoppedAt: null,
         };
+        const balanceAfter = state.points - finalBoost;
         set((s) => ({
           userPosts: [post, ...s.userPosts],
-          points: s.points - finalBoost,
+          points: balanceAfter,
+          zapLedger:
+            finalBoost > 0
+              ? [
+                  {
+                    id: `zl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    delta: -finalBoost,
+                    reason: "boost",
+                    balanceAfter,
+                    at: now.toISOString(),
+                  },
+                  ...s.zapLedger,
+                ].slice(0, 30)
+              : s.zapLedger,
         }));
+        // Quest counts: post created + maybe with image + maybe with market.
+        get().bumpQuest("create_post");
+        if (draft.images?.length) get().bumpQuest("create_post_image");
+        if (draft.marketId) get().bumpQuest("attach_market");
         return post;
       },
 
@@ -552,6 +653,169 @@ export const useZapStore = create<ZapState>()(
         set((s) => ({
           affinity: updateAffinity(s.affinity, category, signal as AffinitySignal),
         }));
+      },
+
+      applySignal: (signal, ctx) => {
+        set((s) => {
+          const nextGraph = applySignal(s.affinityGraph, signal, ctx);
+          const nextSession = ctx.category
+            ? bumpSessionCategory(s.session, ctx.category, 0.06)
+            : s.session;
+          // Mirror category into the legacy flat affinity so the existing
+          // exposure code keeps working.
+          let nextLegacy = s.affinity;
+          if (ctx.category && signal !== "fast_scroll_away" && signal !== "hide_post" && signal !== "mute_author" && signal !== "repeated_skip") {
+            const map: Partial<Record<Signal, AffinitySignal>> = {
+              like: "like",
+              comment: "comment",
+              follow_author: "follow_author",
+              dwell_3s: "dwell_3s",
+              dwell_10s: "dwell_10s",
+              dwell_30s: "dwell_10s",
+              click_category: "click",
+              click_hashtag: "click",
+              open_market: "click",
+              open_profile: "click",
+            };
+            const legacy = map[signal];
+            if (legacy) {
+              nextLegacy = updateAffinity(s.affinity, ctx.category, legacy);
+            }
+          }
+          return {
+            affinityGraph: nextGraph,
+            session: nextSession,
+            affinity: nextLegacy,
+          };
+        });
+      },
+
+      bumpSessionCategory: (category, step = 0.06) => {
+        set((s) => ({ session: bumpSessionCategory(s.session, category, step) }));
+      },
+
+      touchStreak: () => {
+        const s = get();
+        const r = tickStreak(s.streak);
+        const mBonus = r.milestoneHit ? milestoneBonus(r.milestoneHit) : 0;
+        const totalReward = r.reward + mBonus;
+        if (totalReward > 0) {
+          const balanceAfter = s.points + totalReward;
+          set({
+            streak: r.next,
+            points: balanceAfter,
+            zapLedger: [
+              {
+                id: `zl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                delta: totalReward,
+                reason: r.milestoneHit
+                  ? `streak_milestone_${r.milestoneHit}`
+                  : `streak_${r.delta}`,
+                balanceAfter,
+                at: new Date().toISOString(),
+              },
+              ...s.zapLedger,
+            ].slice(0, 30),
+          });
+        } else {
+          set({ streak: r.next });
+        }
+        return { delta: r.delta, reward: totalReward, milestoneHit: r.milestoneHit };
+      },
+
+      spendRecovery: () => {
+        const s = get();
+        if (s.streak.recoveriesAvailable <= 0 || !s.streak.pendingRecoveryFor) {
+          return false;
+        }
+        set({ streak: applyRecovery(s.streak) });
+        return true;
+      },
+
+      ensureDailyQuests: () => {
+        const s = get();
+        const today = todayKey();
+        if (s.questDay === today && s.activeQuests.length === 3) return;
+        const recent = s.activeQuests.map((q) => q.kind);
+        const quests = pickDailyQuests("u-current", today, recent);
+        set({
+          questDay: today,
+          activeQuests: quests,
+          questCounts: {},
+          questClaimed: {},
+        });
+      },
+
+      bumpQuest: (kind, delta = 1) => {
+        set((s) => ({
+          questCounts: { ...s.questCounts, [kind]: (s.questCounts[kind] ?? 0) + delta },
+        }));
+      },
+
+      claimQuest: (kind) => {
+        const s = get();
+        const def = s.activeQuests.find((q) => q.kind === kind);
+        if (!def) return 0;
+        if (s.questClaimed[kind]) return 0;
+        const progress = s.questCounts[kind] ?? 0;
+        if (progress < def.goal) return 0;
+        const reward = def.reward;
+        const balanceAfter = s.points + reward;
+        set({
+          points: balanceAfter,
+          questClaimed: { ...s.questClaimed, [kind]: true },
+          zapLedger: [
+            {
+              id: `zl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              delta: reward,
+              reason: `quest_${kind}`,
+              balanceAfter,
+              at: new Date().toISOString(),
+            },
+            ...s.zapLedger,
+          ].slice(0, 30),
+        });
+        return reward;
+      },
+
+      earnZaps: (amount, reason) => {
+        if (amount <= 0) return;
+        const s = get();
+        const balanceAfter = s.points + amount;
+        set({
+          points: balanceAfter,
+          zapLedger: [
+            {
+              id: `zl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              delta: amount,
+              reason,
+              balanceAfter,
+              at: new Date().toISOString(),
+            },
+            ...s.zapLedger,
+          ].slice(0, 30),
+        });
+      },
+
+      spendZaps: (amount, reason) => {
+        if (amount <= 0) return true;
+        const s = get();
+        if (s.points < amount) return false;
+        const balanceAfter = s.points - amount;
+        set({
+          points: balanceAfter,
+          zapLedger: [
+            {
+              id: `zl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              delta: -amount,
+              reason,
+              balanceAfter,
+              at: new Date().toISOString(),
+            },
+            ...s.zapLedger,
+          ].slice(0, 30),
+        });
+        return true;
       },
 
       upsertDraft: (patch) => {
@@ -636,6 +900,8 @@ export const useZapStore = create<ZapState>()(
             userPosts: updatedUserPosts,
           };
         });
+        get().bumpQuest("comment_twice");
+        if (parentId) get().bumpQuest("reply_comment");
         return comment;
       },
 
@@ -683,7 +949,7 @@ export const useZapStore = create<ZapState>()(
       },
       reset: () =>
         set({
-          points: 1000,
+          points: 50,
           totalPredictions: 0,
           profileOverride: {},
           followingUserIds: [],
@@ -698,6 +964,14 @@ export const useZapStore = create<ZapState>()(
           cooldownEndsAt: null,
           postImpressions: {},
           postClicks: {},
+          affinityGraph: EMPTY_GRAPH,
+          session: EMPTY_SESSION,
+          streak: FRESH_STREAK,
+          questDay: "",
+          activeQuests: [],
+          questCounts: {},
+          questClaimed: {},
+          zapLedger: [],
           userPosts: [],
           commentsByPostId: {},
           drafts: [],

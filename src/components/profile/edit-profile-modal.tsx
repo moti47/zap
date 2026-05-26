@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -34,6 +34,7 @@ interface EditProfileModalProps {
   initialBio: string;
   initialAvatarUrl?: string | null;
   initialCoverGradient?: string | null;
+  initialBannerUrl?: string | null;
   /**
    * When provided, persist edits to Supabase via the server action.
    * If omitted, falls back to the local-only Zustand `profileOverride`.
@@ -49,6 +50,7 @@ export function EditProfileModal({
   initialBio,
   initialAvatarUrl,
   initialCoverGradient,
+  initialBannerUrl,
   hasBackend = false,
   username,
 }: EditProfileModalProps) {
@@ -61,18 +63,25 @@ export function EditProfileModal({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     initialAvatarUrl ?? null,
   );
+  const [bannerUrl, setBannerUrl] = useState<string | null>(
+    initialBannerUrl ?? null,
+  );
+  const [bannerDragOver, setBannerDragOver] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [gradient, setGradient] = useState<string>(
     initialCoverGradient ?? override.avatarGradient ?? GRADIENTS[0].value,
   );
   const [uploading, setUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setName(initialName ?? override.name ?? "");
       setBio(initialBio ?? override.bio ?? "");
       setAvatarUrl(initialAvatarUrl ?? null);
+      setBannerUrl(initialBannerUrl ?? null);
       setGradient(
         initialCoverGradient ?? override.avatarGradient ?? GRADIENTS[0].value,
       );
@@ -81,6 +90,58 @@ export function EditProfileModal({
   }, [open]);
 
   const onPickAvatar = () => fileInputRef.current?.click();
+  const onPickBanner = () => bannerInputRef.current?.click();
+
+  const uploadBannerFile = async (file: File) => {
+    if (file.size > 6 * 1024 * 1024) {
+      toast.error("Banner too large — max 6MB");
+      return;
+    }
+    if (
+      file.type &&
+      !["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(
+        file.type.toLowerCase(),
+      )
+    ) {
+      toast.error("Use PNG, JPEG or WebP for banners");
+      return;
+    }
+    setUploadingBanner(true);
+    const t = toast.loading("Uploading banner…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload-banner", {
+        method: "POST",
+        body: fd,
+      });
+      const json = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !json.url) {
+        throw new Error(json.error || "Upload failed");
+      }
+      setBannerUrl(json.url);
+      toast.success("Banner uploaded", { id: t });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      toast.error(m, { id: t });
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
+  const onBannerFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await uploadBannerFile(file);
+  };
+
+  const onBannerDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setBannerDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await uploadBannerFile(file);
+  };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -143,6 +204,7 @@ export function EditProfileModal({
           bio: safeBio,
           avatar_url: avatarUrl,
           cover_gradient: gradient,
+          banner_url: bannerUrl,
         },
         { username },
       );
@@ -173,9 +235,76 @@ export function EditProfileModal({
           </DialogHeader>
         </div>
 
-        {/* Cover preview */}
-        <div className="relative h-24 w-full" style={{ background: gradient }}>
+        {/* Cover / banner preview — banner image wins when set, gradient fallback. */}
+        <div
+          className={cn(
+            "relative h-28 w-full overflow-hidden transition-colors",
+            bannerDragOver && "ring-2 ring-[#FFE600] ring-offset-0",
+          )}
+          style={!bannerUrl ? { background: gradient } : undefined}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setBannerDragOver(true);
+          }}
+          onDragLeave={() => setBannerDragOver(false)}
+          onDrop={onBannerDrop}
+        >
+          {bannerUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={bannerUrl}
+              alt="Banner preview"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#1A1D26]/80" />
+
+          {/* Banner controls — top-right */}
+          <div className="absolute top-2 right-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onPickBanner}
+              disabled={uploadingBanner || saving}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-black/55 hover:bg-black/70 backdrop-blur text-white text-[11px] font-semibold transition-colors"
+            >
+              {uploadingBanner ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Uploading…
+                </>
+              ) : (
+                <>
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  {bannerUrl ? "Replace banner" : "Add banner"}
+                </>
+              )}
+            </button>
+            {bannerUrl && (
+              <button
+                type="button"
+                onClick={() => setBannerUrl(null)}
+                disabled={uploadingBanner || saving}
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-black/55 hover:bg-[#FF4757]/80 backdrop-blur text-white transition-colors"
+                aria-label="Remove banner"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {!bannerUrl && (
+            <div className="absolute inset-x-0 bottom-2 text-center text-[10.5px] font-mono text-white/75 uppercase tracking-widest">
+              Drop an image or click <span className="text-[#FFE600]">Add banner</span>
+            </div>
+          )}
+
+          <input
+            ref={bannerInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            className="hidden"
+            onChange={onBannerFile}
+          />
         </div>
 
         <div className="p-5 space-y-5 -mt-10 relative">
