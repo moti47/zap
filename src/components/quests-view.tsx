@@ -32,7 +32,6 @@ import {
 import {
   tierForStreak,
   nextTier,
-  STREAK_TIERS,
 } from "@/lib/streaks";
 import { ZapMark } from "./zap-logo";
 import { cn } from "@/lib/utils";
@@ -149,7 +148,7 @@ export function QuestsView() {
             background: `radial-gradient(60% 80% at 100% 0%, ${tier.color}55, transparent 60%)`,
           }}
         />
-        <div className="relative grid grid-cols-1 md:grid-cols-[1.1fr_1fr] gap-4 p-5">
+        <div className="relative p-5">
           <div>
             <div className="flex items-center gap-2 mb-3">
               <motion.div
@@ -162,15 +161,8 @@ export function QuestsView() {
               >
                 <Flame className="h-5 w-5" />
               </motion.div>
-              <span
-                className="text-[10.5px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border"
-                style={{
-                  color: tier.color,
-                  borderColor: `${tier.color}55`,
-                  background: `${tier.color}14`,
-                }}
-              >
-                {tier.label}
+              <span className="text-[10.5px] font-bold uppercase tracking-widest text-[#8B92A8]">
+                Streak
               </span>
             </div>
             <div className="flex items-baseline gap-2">
@@ -200,13 +192,6 @@ export function QuestsView() {
                   {streak.longestStreak}
                 </span>
               </span>
-              <span className="text-[#353B4D]">·</span>
-              <span>
-                Boost discount{" "}
-                <span className="font-mono text-[#FFE600]">
-                  {tier.boostDiscountPct}%
-                </span>
-              </span>
             </div>
 
             {next && (
@@ -223,9 +208,9 @@ export function QuestsView() {
                   />
                 </div>
                 <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono text-[#5A6175]">
-                  <span>{tier.label}</span>
+                  <span>Current</span>
                   <span>
-                    {next.min - streak.currentStreak} to {next.label}
+                    {next.min - streak.currentStreak} day{next.min - streak.currentStreak === 1 ? "" : "s"} to next reward
                   </span>
                 </div>
               </div>
@@ -255,56 +240,6 @@ export function QuestsView() {
             )}
           </div>
 
-          {/* Tier ladder */}
-          <div className="rounded-[12px] bg-[#0E1016]/60 border border-[#2A2F3D] p-3">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-[#5A6175] mb-2">
-              Tier ladder
-            </div>
-            <ul className="space-y-1.5">
-              {STREAK_TIERS.map((t) => {
-                const reached = streak.currentStreak >= t.min;
-                const current = t.label === tier.label;
-                return (
-                  <li
-                    key={t.label}
-                    className={cn(
-                      "flex items-center gap-2 px-2 py-1.5 rounded-md text-[11.5px] transition-all",
-                      current
-                        ? "bg-white/5"
-                        : reached
-                          ? "opacity-90"
-                          : "opacity-50",
-                    )}
-                  >
-                    <span
-                      className="h-5 w-5 rounded-full grid place-items-center text-[10px]"
-                      style={{
-                        background: reached ? `${t.color}22` : "#0E1016",
-                        border: `1px solid ${reached ? t.color : "#2A2F3D"}`,
-                        color: t.color,
-                      }}
-                    >
-                      {reached ? "✓" : ""}
-                    </span>
-                    <span
-                      className="font-semibold flex-1"
-                      style={{ color: current ? t.color : "white" }}
-                    >
-                      {t.label}
-                    </span>
-                    <span className="font-mono text-[10px] text-[#5A6175]">
-                      {t.min}d
-                    </span>
-                    {t.boostDiscountPct > 0 && (
-                      <span className="font-mono text-[10px] text-[#FFE600]">
-                        -{t.boostDiscountPct}%
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
         </div>
       </section>
 

@@ -207,7 +207,7 @@ function Step1({ onNext }: { onNext: () => void }) {
         Welcome to Zap.
       </h1>
       <p className="mt-3 text-lg text-[#8B92A8] max-w-md mx-auto">
-        Here are 1,000 starting points to get you trading.
+        Here are 50 starting Zaps. Earn more by completing daily quests and keeping your streak alive.
       </p>
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -217,7 +217,7 @@ function Step1({ onNext }: { onNext: () => void }) {
       >
         <Sparkles className="h-6 w-6 text-[#FFE600]" />
         <span className="text-3xl font-extrabold font-mono inline-flex items-center">
-          1,000
+          50
           <ZapMark className="lg" />
         </span>
       </motion.div>
@@ -401,8 +401,8 @@ function Step4({
         Make your first prediction.
       </h1>
       <p className="mt-2 text-[#8B92A8] text-center">
-        Here's a curated market to start. Buy any amount of YES or NO — your 1,000⚡
-        won't go far if you're careless.
+        Here's a curated market to start. Buy any amount of YES or NO — 50⚡
+        won't go far, so trade carefully.
       </p>
       <div className="mt-7">
         <MarketCardCompact market={market} />

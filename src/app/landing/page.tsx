@@ -54,7 +54,7 @@ export default function LandingPage() {
             <div className="mt-7 flex flex-col sm:flex-row gap-3">
               <Button size="xl" asChild className="text-base">
                 <Link href="/onboarding">
-                  Get 1,000 free points
+                  Get started — it's free
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
@@ -127,7 +127,7 @@ export default function LandingPage() {
             {
               n: "01",
               title: "Sign up, get points",
-              body: "Create an account and we'll drop 1,000 points in your wallet. Use them to buy positions on any market.",
+              body: "Create an account, claim 50 starting Zaps, and earn more through daily quests, streaks, and accurate predictions.",
             },
             {
               n: "02",
@@ -239,8 +239,8 @@ export default function LandingPage() {
           <AccordionItem value="5">
             <AccordionTrigger>How do I earn points?</AccordionTrigger>
             <AccordionContent>
-              You start with 1,000. You earn points by winning predictions, by referring
-              friends, and by being among the top 10 in a category leaderboard for the week.
+              You start with 50 Zaps. You earn more by completing daily quests, keeping
+              a streak alive, winning predictions, and ranking in the weekly leaderboard.
             </AccordionContent>
           </AccordionItem>
         </Accordion>
@@ -248,7 +248,7 @@ export default function LandingPage() {
         <div className="mt-12 rounded-[18px] border border-[#FFE600]/30 bg-gradient-to-br from-[#1F1A0E] to-[#14161D] p-8 text-center">
           <h3 className="text-2xl font-bold">Ready to bet on yourself?</h3>
           <p className="mt-2 text-[#8B92A8]">
-            Get 1,000 points and your first prediction in 60 seconds.
+            Sign up and place your first prediction in under 60 seconds.
           </p>
           <Button size="xl" className="mt-5" asChild>
             <Link href="/onboarding">

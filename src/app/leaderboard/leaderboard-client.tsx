@@ -36,7 +36,7 @@ export function LeaderboardClient() {
     const scored = users.map((u) => {
       const score =
         cat === "overall"
-          ? Object.values(u.expertScores).reduce((a, b) => a + (b ?? 0), 0) /
+          ? (Object.values(u.expertScores).reduce((a, b) => (a ?? 0) + (b ?? 0), 0) ?? 0) /
             Math.max(1, Object.values(u.expertScores).length)
           : u.expertScores[cat] ?? 0;
       const adjusted =

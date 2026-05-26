@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { ChevronUp } from "lucide-react";
@@ -83,10 +83,14 @@ function serverPostToUserPost(p: ServerPost): UserPost {
   };
 }
 
+const PAGE_SIZE = 12;
+
 export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   const hydrated = useHydrated();
   const { isSignedIn } = useIsSignedIn();
   const userPosts = useZapStore(useShallow((s) => s.userPosts));
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const affinityGraph = useZapStore((s) => s.affinityGraph);
   const sessionState = useZapStore((s) => s.session);
   const postImpressions = useZapStore(useShallow((s) => s.postImpressions));
@@ -375,22 +379,44 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
 
       {!paintLoading && snapshot && (
         <div className="space-y-4">
-          {filtered.map((post) => {
-            const breakdown = snapshot.breakdowns[(post as any).id];
-            const isExplore = snapshot.scores[(post as any).id] !== undefined;
-            return (
-              <FeedItemRow
-                key={(post as any).id}
-                post={post}
-                breakdown={breakdown}
-                isExplore={isExplore}
-              />
-            );
-          })}
-          {filtered.length === 0 && (
-            <div className="rounded-[14px] border border-dashed border-[#2A2F3D] p-10 text-center text-[#8B92A8]">
-              Nothing here yet — switch tabs or write a post.
-            </div>
+          {/* Infinite feed: when we run out of unique posts, the
+              cycledItems array repeats from index 0. Keys include a
+              cycle suffix so React doesn't think it's the same node. */}
+          {(() => {
+            if (filtered.length === 0) {
+              return (
+                <div className="rounded-[14px] border border-dashed border-[#2A2F3D] p-10 text-center text-[#8B92A8]">
+                  Nothing here yet — switch tabs or write a post.
+                </div>
+              );
+            }
+            const rows = [];
+            for (let i = 0; i < visibleCount; i++) {
+              const post = filtered[i % filtered.length];
+              const cycle = Math.floor(i / filtered.length);
+              const id = (post as any).id;
+              const breakdown = snapshot.breakdowns[id];
+              const isExplore = snapshot.scores[id] !== undefined;
+              rows.push(
+                <FeedItemRow
+                  key={cycle === 0 ? id : `${id}-cycle${cycle}`}
+                  post={post}
+                  breakdown={breakdown}
+                  isExplore={isExplore}
+                />,
+              );
+            }
+            return rows;
+          })()}
+          {/* Sentinel — when it scrolls into view, load more rows. */}
+          {filtered.length > 0 && (
+            <InfiniteSentinel
+              ref={loadMoreSentinelRef}
+              onIntersect={() =>
+                setVisibleCount((n) => Math.min(n + PAGE_SIZE, 240))
+              }
+              maxed={visibleCount >= 240}
+            />
           )}
         </div>
       )}
@@ -438,3 +464,39 @@ function FeedItemRow({
     </motion.div>
   );
 }
+
+/**
+ * Sentinel for the infinite feed. Loads PAGE_SIZE more rows whenever
+ * it scrolls into view. Renders nothing when we've hit the soft cap
+ * (so the page doesn't accidentally grow unbounded).
+ */
+const InfiniteSentinel = React.forwardRef<
+  HTMLDivElement,
+  { onIntersect: () => void; maxed: boolean }
+>(function InfiniteSentinel({ onIntersect, maxed }, ref) {
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) onIntersect();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onIntersect]);
+  if (maxed) return null;
+  return (
+    <div
+      ref={(node) => {
+        innerRef.current = node;
+        if (typeof ref === "function") ref(node);
+        else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }}
+      className="h-px"
+      aria-hidden
+    />
+  );
+});

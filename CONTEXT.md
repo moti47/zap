@@ -239,3 +239,55 @@ files must live under a folder matching the uploader's `auth.uid()`.
     - Notification kind enum extended with `market_proposed`, `market_approved`, `market_rejected`, `quest_claimed` so the new flows have typed payloads.
   - **Affinity in the store**: `lib/store.ts` adds `hashtagAffinity` (parallel to `affinity`) + `feedFilter` slice. `bumpHashtagAffinity(slug, signal)` slugifies inputs and feeds the same EWMA helper used for categories. `PostCard` clicks on a hashtag chip bump the relevant tag affinity.
   - **Env**: `.env.local.example` documents `ADMIN_USER_ID`. The `0003` migration reads it as a GUC at apply time when present, and the idempotent `bootstrap_admin(uuid)` helper is available for ad-hoc invocation.
+
+- ✅ **Polish 2 — real-user UX cleanup** (this round). Hide internals,
+  expand categories, gate onboarding, infinite feed.
+  - **Tier ladder hidden from /quests** (section 25 directive). The
+    Spark/Kindle/Glow/Blaze internals were leaking into the UI as a
+    right-column ladder + a tier-name pill + "Boost discount X%"
+    stat. All removed. The "X to Kindle" copy generalized to "X days
+    to next reward". Reward math still runs internally; users just
+    don't see the name of the tier.
+  - **Settings menu repointed.** Topbar dropdown's "Preferences"
+    pointed at `/onboarding`, which made clicking Settings re-trigger
+    the new-user welcome flow (incl. an outdated "1000⚡" hero).
+    Renamed to "Settings", repointed to `/profile/edit`. The
+    `/onboarding` page now reads `profiles.onboarded` and redirects
+    already-onboarded users to `/`. Onboarding only fires ONCE per
+    account now.
+  - **1,000⚡ copy purged.** Landing CTA / onboarding welcome /
+    onboarding market page / FAQ / final CTA — all replaced with
+    50⚡-start + earn-via-quest language. No "Get 1,000 free points"
+    anywhere.
+  - **50 categories with search.** `lib/types.ts CATEGORIES` expanded
+    from 6 → 50 (ai, stocks, finance, elections, geopolitics,
+    climate, science, health, gaming, esports, movies, tv, music,
+    celebrities, fashion, art, books, education, startups, vc,
+    real-estate, energy, oil, commodities, metals, macro, rates,
+    inflation, jobs, trade, war, space, weather, natural-disasters,
+    olympics, soccer, nba, nfl, mlb, tennis, f1, ufc, boxing + the
+    original 6). New migration `0007_categories_expand.sql` inserts
+    them into `public.categories` idempotently. `Category` type
+    widened from union → `string` so future slugs land without code
+    changes. `CategoryPicker` gets a search input (autofocus on open,
+    filters by slug + title + description), default meta builder for
+    arbitrary slugs, and an "X / N" footer count.
+  - **Admin nav link.** `navItems` adds an `Admin` entry with
+    `adminOnly: true`. The topbar filters
+    `navItems.filter((item) => !item.adminOnly || viewer?.is_admin)`
+    so only the env-pinned admin sees it.
+  - **DemoSeedButton hidden.** Was visible in dev. Now requires
+    `NEXT_PUBLIC_ENABLE_DEMO_SEED=1` to render. Off by default.
+  - **Infinite feed with cycle-when-exhausted.** `FeedStream`
+    initial visible count = 12. An IntersectionObserver sentinel
+    600px below the last row loads PAGE_SIZE more whenever it enters
+    the viewport. When the `filtered` pool is exhausted the index
+    wraps via `i % filtered.length` — same posts repeat with a
+    `-cycle{n}` key suffix so React renders fresh DOM nodes (no
+    flicker, no reshuffle). Soft cap at 240 rows so the page can't
+    grow unbounded.
+  - **TypeScript follow-ups.** Widening `Category` from union to
+    `string` broke a couple of `reduce` calls that assumed the
+    initial value was numeric; null-safe-ified those in
+    `lib/fixtures.ts` and `app/leaderboard/leaderboard-client.tsx`.
+    Type-check stays 100% clean.

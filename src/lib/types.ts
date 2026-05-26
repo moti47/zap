@@ -8,21 +8,20 @@
  * components keep compiling without sweeping prop renames.
  */
 
-export type Category =
-  | "politics"
-  | "crypto"
-  | "sports"
-  | "tech"
-  | "economy"
-  | "entertainment";
+// Phase 11+: 50 most popular categories. Keep as `string` (rather than
+// a string-literal union) so server-side category lookups don't break
+// when new slugs land in the DB without a code change.
+export type Category = string;
 
 export const CATEGORIES: Category[] = [
-  "politics",
-  "crypto",
-  "sports",
-  "tech",
-  "economy",
-  "entertainment",
+  "politics", "crypto", "sports", "tech", "economy", "entertainment",
+  "ai", "stocks", "finance", "elections", "geopolitics", "climate",
+  "science", "health", "covid", "gaming", "esports", "movies", "tv",
+  "music", "celebrities", "fashion", "art", "books", "education",
+  "startups", "vc", "real-estate", "energy", "oil", "commodities",
+  "metals", "macro", "rates", "inflation", "jobs", "trade", "war",
+  "space", "weather", "natural-disasters", "olympics", "soccer",
+  "nba", "nfl", "mlb", "tennis", "f1", "ufc", "boxing",
 ];
 
 export type ExpertScores = Partial<Record<Category, number>>;

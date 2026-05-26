@@ -41,7 +41,14 @@ import { PostComposer } from "./post/post-composer";
 import { GlobalSearch } from "./global-search";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  match: (p: string) => boolean;
+  adminOnly?: boolean;
+}
+
+const navItems: NavItem[] = [
   { href: "/", label: "Feed", match: (p: string) => p === "/" },
   {
     href: "/markets",
@@ -52,6 +59,7 @@ const navItems = [
   { href: "/saved", label: "Saved", match: (p: string) => p.startsWith("/saved") },
   { href: "/quests", label: "Quests", match: (p: string) => p.startsWith("/quests") },
   { href: "/propose", label: "Propose", match: (p: string) => p.startsWith("/propose") },
+  { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin"), adminOnly: true },
 ];
 
 export function Topbar() {
@@ -105,7 +113,7 @@ export function Topbar() {
 
           {/* Center nav (desktop) */}
           <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-            {navItems.map((item) => {
+            {navItems.filter((item) => !item.adminOnly || viewer?.is_admin).map((item) => {
               const active = item.match(pathname);
               return (
                 <Link
@@ -275,9 +283,9 @@ export function Topbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/onboarding" className="cursor-pointer">
+                  <Link href="/profile/edit" className="cursor-pointer">
                     <Settings className="h-4 w-4 mr-2 text-[#8B92A8]" />
-                    Preferences
+                    Settings
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -334,7 +342,7 @@ export function Topbar() {
               </button>
             </div>
             <nav className="flex-1 p-3 flex flex-col gap-0.5">
-              {navItems.map((item) => {
+              {navItems.filter((item) => !item.adminOnly || viewer?.is_admin).map((item) => {
                 const active = item.match(pathname);
                 return (
                   <Link

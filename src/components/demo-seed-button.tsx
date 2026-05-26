@@ -13,6 +13,10 @@ export function DemoSeedButton() {
   const addPost = useZapStore((s) => s.addPost);
   const [running, setRunning] = useState(false);
 
+  // Hidden everywhere by default — was originally a dev-only seed
+  // helper but the user doesn't want it visible. Set
+  // NEXT_PUBLIC_ENABLE_DEMO_SEED=1 to bring it back temporarily.
+  if (process.env.NEXT_PUBLIC_ENABLE_DEMO_SEED !== "1") return null;
   if (process.env.NODE_ENV === "production") return null;
 
   const runSeed = async () => {

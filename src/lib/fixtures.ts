@@ -528,7 +528,7 @@ export function topExperts(n = 5): User[] {
     .map((u) => ({
       u,
       score:
-        Object.values(u.expertScores).reduce((a, b) => a + (b ?? 0), 0) /
+        Object.values(u.expertScores).reduce((a, b) => (a ?? 0) + (b ?? 0), 0)! /
         Math.max(1, Object.values(u.expertScores).length),
     }))
     .sort((a, b) => b.score - a.score)
