@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { signInWithPassword, signInWithMagicLink } from "../actions";
@@ -41,6 +42,7 @@ export function SignInForm({
   next: string;
   initialError?: string;
 }) {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"password" | "magic">("password");
@@ -60,11 +62,24 @@ export function SignInForm({
     startTransition(async () => {
       if (mode === "magic") {
         const result = await signInWithMagicLink(email);
-        if (result?.error) setError(result.error);
-        else toast.success("Check your email for the magic link.");
+        if ("error" in result && result.error) {
+          setError(result.error);
+          return;
+        }
+        toast.success("Check your email for the magic link.");
       } else {
         const result = await signInWithPassword(email, password, next);
-        if (result?.error) setError(result.error);
+        if ("error" in result && result.error) {
+          setError(result.error);
+          return;
+        }
+        if ("ok" in result && result.ok) {
+          // Navigate INSIDE the transition so `pending` stays true
+          // until the new page is fully painted — keeps the spinner
+          // visible the whole time.
+          router.replace(result.next);
+          router.refresh();
+        }
       }
     });
   };

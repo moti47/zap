@@ -7,13 +7,14 @@
  *   - Fetches the current Supabase user + profile row once on mount.
  *   - Subscribes to `supabase.auth.onAuthStateChange` so SIGNED_IN /
  *     SIGNED_OUT / TOKEN_REFRESHED events flip the cached state
- *     instantly. This is what kills the ghost-session bug: any tab
- *     that detects sign-out goes anonymous within the same React
- *     render cycle — no full page reload required.
+ *     instantly.
  *   - Subscribes to a per-row Postgres realtime channel so edits to
- *     `profiles` (avatar, banner, zaps, is_admin) propagate too.
- *   - When Supabase env isn't configured (prototype/demo mode) the
- *     hook resolves to `{ viewer: null, loading: false }`.
+ *     `profiles` (avatar, banner, zaps, is_admin) propagate too. The
+ *     channel name carries a Date.now() suffix and we always
+ *     `removeChannel` before re-subscribing — Supabase's internal
+ *     channel registry will silently return an already-subscribed
+ *     channel if you reuse the same name, and then `.on()` after
+ *     `.subscribe()` throws.
  *
  * NEVER fall through to a fake "Y" profile when `viewer` is null — UI
  * MUST show Sign in / Create account CTAs instead.
@@ -82,34 +83,62 @@ export function useViewer(): State {
     }
     let cancelled = false;
     let profileChannel: ReturnType<SupabaseClient["channel"]> | null = null;
+    let subscribedForId: string | null = null;
     const supabase = createBrowserClient();
 
-    const refresh = async () => {
-      const viewer = await fetchViewer(supabase);
-      if (cancelled) return;
-      setState({ viewer, loading: false });
+    /**
+     * Replace any existing channel with a fresh one for this viewer.
+     * Always tears down before creating + uses a unique-per-mount
+     * channel name so Supabase's internal registry can't hand us back
+     * an already-subscribed instance (which crashes `.on()` calls).
+     */
+    const ensureChannel = (viewerId: string) => {
+      if (subscribedForId === viewerId && profileChannel) return;
+      // Tear down anything stale first.
+      if (profileChannel) {
+        try {
+          supabase.removeChannel(profileChannel);
+        } catch {
+          // best-effort
+        }
+        profileChannel = null;
+      }
+      subscribedForId = viewerId;
+      const channelName = `viewer:${viewerId}:${Date.now()}`;
+      const channel = supabase.channel(channelName);
+      channel.on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${viewerId}`,
+        },
+        () => {
+          if (cancelled) return;
+          fetchViewer(supabase).then((next) => {
+            if (!cancelled) {
+              setState((prev) => ({ ...prev, viewer: next }));
+            }
+          });
+        },
+      );
+      channel.subscribe();
+      profileChannel = channel;
+    };
 
-      // Subscribe to the viewer's profile row for live edits.
-      if (viewer && !profileChannel) {
-        profileChannel = supabase
-          .channel(`viewer:${viewer.id}`)
-          .on(
-            "postgres_changes",
-            {
-              event: "UPDATE",
-              schema: "public",
-              table: "profiles",
-              filter: `id=eq.${viewer.id}`,
-            },
-            () => {
-              fetchViewer(supabase).then((next) => {
-                if (!cancelled) {
-                  setState((prev) => ({ ...prev, viewer: next }));
-                }
-              });
-            },
-          )
-          .subscribe();
+    const refresh = async () => {
+      try {
+        const viewer = await fetchViewer(supabase);
+        if (cancelled) return;
+        setState({ viewer, loading: false });
+        if (viewer) ensureChannel(viewer.id);
+      } catch (err) {
+        // Never block the rest of the app on a profile fetch failure
+        // — set loading=false so gated clicks unblock.
+        if (!cancelled) setState({ viewer: null, loading: false });
+        // eslint-disable-next-line no-console
+        console.error("[useViewer] refresh failed:", err);
       }
     };
 
@@ -124,11 +153,15 @@ export function useViewer(): State {
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       if (event === "SIGNED_OUT" || !session) {
-        // Tear down any live channel and go anonymous.
         if (profileChannel) {
-          supabase.removeChannel(profileChannel);
+          try {
+            supabase.removeChannel(profileChannel);
+          } catch {
+            // best-effort
+          }
           profileChannel = null;
         }
+        subscribedForId = null;
         setState({ viewer: null, loading: false });
         return;
       }
@@ -138,9 +171,17 @@ export function useViewer(): State {
 
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
+      try {
+        subscription.unsubscribe();
+      } catch {
+        // best-effort
+      }
       if (profileChannel) {
-        supabase.removeChannel(profileChannel);
+        try {
+          supabase.removeChannel(profileChannel);
+        } catch {
+          // best-effort
+        }
         profileChannel = null;
       }
     };

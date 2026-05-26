@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { signUpWithPassword } from "../actions";
 
 export function SignUpForm({ next }: { next: string }) {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -23,7 +25,14 @@ export function SignUpForm({ next }: { next: string }) {
         username,
         next,
       });
-      if (result?.error) setError(result.error);
+      if ("error" in result && result.error) {
+        setError(result.error);
+        return;
+      }
+      if ("ok" in result && result.ok) {
+        router.replace(result.next);
+        router.refresh();
+      }
     });
   };
 
