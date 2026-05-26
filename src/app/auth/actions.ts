@@ -55,7 +55,12 @@ export async function signInWithPassword(
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: error.message };
-  revalidatePath("/", "layout");
+  // No revalidatePath here — it triggers a full RSC re-render across
+  // the layout which is heavy and makes login feel slow. The browser
+  // already has the new auth cookies on the redirect response; the
+  // client `useViewer()` hook fires SIGNED_IN via onAuthStateChange
+  // and updates the topbar instantly. RSC re-renders happen
+  // naturally on the next navigation.
   redirect(next || "/feed");
 }
 
@@ -135,7 +140,9 @@ export async function signUpWithPassword(input: {
     }
     return { error: error.message };
   }
-  revalidatePath("/", "layout");
+  // See signInWithPassword: skip the heavy revalidatePath so the
+  // redirect feels instant. useViewer's onAuthStateChange picks up
+  // the new session and refreshes the UI.
   redirect(input.next || "/onboarding");
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { signInWithPassword, signInWithMagicLink } from "../actions";
 
@@ -69,11 +70,23 @@ export function SignInForm({
   };
 
   return (
-    <form onSubmit={submit} className="mt-6 space-y-4">
+    <form onSubmit={submit} className="mt-6 space-y-4 relative">
+      {/* Soft overlay during submit so the form visibly freezes and
+          the user knows we're working — no more "did it work?" wait. */}
+      {pending && (
+        <div className="absolute inset-0 -m-2 rounded-xl bg-black/40 backdrop-blur-[1px] z-10 flex items-center justify-center pointer-events-auto">
+          <div className="flex items-center gap-2 text-sm text-white/90">
+            <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
+            {mode === "magic" ? "Sending link…" : "Signing you in…"}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2 rounded-lg bg-black/30 p-1 text-sm">
         <button
           type="button"
           onClick={() => setMode("password")}
+          disabled={pending}
           className={`flex-1 rounded-md py-1.5 transition ${
             mode === "password" ? "bg-white/10 text-white" : "text-white/60"
           }`}
@@ -83,6 +96,7 @@ export function SignInForm({
         <button
           type="button"
           onClick={() => setMode("magic")}
+          disabled={pending}
           className={`flex-1 rounded-md py-1.5 transition ${
             mode === "magic" ? "bg-white/10 text-white" : "text-white/60"
           }`}
@@ -95,10 +109,11 @@ export function SignInForm({
         type="email"
         autoComplete="email"
         required
+        disabled={pending}
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"
-        className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-yellow-400"
+        className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-yellow-400 disabled:opacity-60"
       />
 
       {mode === "password" && (
@@ -107,10 +122,11 @@ export function SignInForm({
           autoComplete="current-password"
           required
           minLength={6}
+          disabled={pending}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-yellow-400"
+          className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-yellow-400 disabled:opacity-60"
         />
       )}
 
@@ -123,9 +139,16 @@ export function SignInForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-lg bg-yellow-400 px-4 py-3 font-semibold text-black transition hover:bg-yellow-300 disabled:opacity-50"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-4 py-3 font-semibold text-black transition hover:bg-yellow-300 disabled:opacity-70 disabled:cursor-not-allowed"
       >
-        {pending ? "Working…" : mode === "magic" ? "Send magic link" : "Sign in"}
+        {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {pending
+          ? mode === "magic"
+            ? "Sending link…"
+            : "Signing in…"
+          : mode === "magic"
+            ? "Send magic link"
+            : "Sign in"}
       </button>
     </form>
   );
