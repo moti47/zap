@@ -38,7 +38,52 @@ const STABLE_THRESHOLD_MS = 250;
  *   - First 3 skeletons render instantly; data streams in after.
  *   - Personalization: 92% high-affinity + 8% adjacent explore picks.
  */
-export function FeedStream() {
+interface ServerPost {
+  id: string;
+  body_html: string;
+  category?: { slug: string } | null;
+  market_id: string | null;
+  author_id: string;
+  author?: { id: string; username: string; name: string; avatar_url: string | null };
+  images: string[] | null;
+  likes: number;
+  comments_count: number;
+  shares: number;
+  created_at: string;
+  exposure_score?: number;
+  liked_by_me?: boolean;
+  bookmarked_by_me?: boolean;
+}
+
+interface FeedStreamProps {
+  initialServerPosts?: ServerPost[];
+}
+
+// Convert a Supabase post row into the UserPost shape the FeedItem
+// renderer + ranking pipeline already understand.
+function serverPostToUserPost(p: ServerPost): UserPost {
+  return {
+    id: p.id,
+    type: "user",
+    userId: p.author_id,
+    createdAt: p.created_at,
+    body: p.body_html,
+    category: (p.category?.slug as UserPost["category"]) ?? undefined,
+    marketId: p.market_id ?? undefined,
+    images: Array.isArray(p.images) ? p.images : undefined,
+    likes: p.likes ?? 0,
+    comments: p.comments_count ?? 0,
+    shares: p.shares ?? 0,
+    views: 0,
+    isMine: false,
+    impressions: 0,
+    clicks: 0,
+    throttled: false,
+    boostEarlyStoppedAt: null,
+  };
+}
+
+export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   const hydrated = useHydrated();
   const { isSignedIn } = useIsSignedIn();
   const userPosts = useZapStore(useShallow((s) => s.userPosts));
@@ -156,10 +201,23 @@ export function FeedStream() {
   // Initial paint: snapshot built on mount and on tab change. Not on
   // every interaction.
   // -------------------------------------------------------------------
-  const allItems = useMemo<FeedItem[]>(
-    () => [...userPosts, ...posts],
-    [userPosts],
-  );
+  // Source ordering:
+  //   1. Local optimistic userPosts (Zustand — newest items the viewer just
+  //      composed; persist server-side too)
+  //   2. Real Supabase posts when env is configured + the page server-fetched
+  //      them. De-duplicated against userPosts by id so an optimistic add
+  //      doesn't double-render once it lands in the DB.
+  //   3. Fixture demo posts as a fallback (no env / no rows yet)
+  const allItems = useMemo<FeedItem[]>(() => {
+    const userIds = new Set(userPosts.map((p) => p.id));
+    const serverItems = initialServerPosts
+      .filter((sp) => !userIds.has(sp.id))
+      .map(serverPostToUserPost);
+    if (serverItems.length > 0) {
+      return [...userPosts, ...serverItems];
+    }
+    return [...userPosts, ...posts];
+  }, [userPosts, initialServerPosts]);
 
   // Persist the original allItems used for the active snapshot so
   // realtime additions can be detected.

@@ -27,8 +27,21 @@ import { cn, timeAgo, formatLargeNumber } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { SellSheet } from "../market/sell-sheet";
 import { useRequireSignIn } from "@/lib/require-sign-in";
+import {
+  toggleLikeAction,
+  toggleBookmarkAction,
+} from "@/app/actions/social";
 
 import type { PersonalizedBreakdown } from "@/lib/ranking";
+
+/**
+ * Posts that came from Supabase have UUIDs. Posts that came from
+ * fixtures or the local composer have ids like `p-…` or `up-…`.
+ * The like/bookmark server actions only make sense for real UUIDs.
+ */
+function looksLikeServerPostId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
 
 interface PostCardProps {
   post: Post | UserPost;
@@ -114,9 +127,27 @@ export function PostCard({
       setTimeout(() => setFloatHeart(false), 700);
       if (explainCategory) bumpAffinity(explainCategory, "like");
     }
+    // Optimistic local update
     toggleLike(post.id);
+    // Persist to Supabase. We never throw — server is the source of
+    // truth, but a network blip shouldn't roll back the optimistic UI.
+    if (looksLikeServerPostId(post.id)) {
+      void toggleLikeAction(post.id).then((result) => {
+        if (!result.ok) {
+          // Roll back optimistic state on hard failure.
+          toggleLike(post.id);
+        }
+      });
+    }
   });
-  const handleBookmark = gate(() => toggleBookmark(post.id));
+  const handleBookmark = gate(() => {
+    toggleBookmark(post.id);
+    if (looksLikeServerPostId(post.id)) {
+      void toggleBookmarkAction(post.id).then((result) => {
+        if (!result.ok) toggleBookmark(post.id); // roll back
+      });
+    }
+  });
   const handleCommentToggle = gate(() => setThreadOpen((v) => !v));
 
   const handleClickThrough = () => {

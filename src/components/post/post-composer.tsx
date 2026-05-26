@@ -24,6 +24,7 @@ import { useZapStore } from "@/lib/store";
 import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { extractMentions } from "@/lib/mentions";
 import { notifyMentionsAction } from "@/app/feed/actions";
+import { createPostAction } from "@/app/actions/social";
 import { CATEGORIES, markets, type Category } from "@/lib/fixtures";
 import { cn, categoryColor } from "@/lib/utils";
 import {
@@ -206,6 +207,30 @@ export function PostComposer({
         description: "Your draft is still saved — try again in a moment.",
       });
       return;
+    }
+    // Persist to Supabase. Fire-and-forget — the optimistic local
+    // post (newPost) already shows in the feed. If the server save
+    // fails (e.g. signed out), we surface a toast and keep the local
+    // copy so the user doesn't lose their draft.
+    if (category) {
+      void createPostAction({
+        body_html: cleanHtml,
+        category_slug: category,
+        market_id: marketId || null,
+        images: images.length > 0 ? images : undefined,
+        boost_zaps: willBoost ? boostAmount : undefined,
+        boost_until: willBoost
+          ? new Date(Date.now() + boostDurationH * 3600 * 1000).toISOString()
+          : null,
+      }).then((result) => {
+        if (!result.ok) {
+          // Only complain if the user is signed in — anonymous users
+          // never expect server persistence.
+          if (!/sign(ed)? in/i.test(result.error)) {
+            toast.error("Couldn't save to server", { description: result.error });
+          }
+        }
+      });
     }
     // Phase 9 — fire @mention notifications (best-effort, fails silently
     // when there's no Supabase backend wired).
