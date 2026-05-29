@@ -11,6 +11,7 @@ import { ExpertBadge } from "../expert-badge";
 import { Button } from "../ui/button";
 import { ZapMark } from "../zap-logo";
 import { useZapStore } from "@/lib/store";
+import { fireBumpQuest } from "@/lib/quest-bump";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, categoryColor } from "@/lib/utils";
 import type { User } from "@/lib/fixtures";
@@ -159,7 +160,11 @@ export function ProfileHero({
               <motion.div whileTap={{ scale: 0.96 }}>
                 <Button
                   variant={following ? "secondary" : "default"}
-                  onClick={() => toggleFollow(user.id)}
+                  onClick={() => {
+                    const wasFollowing = following;
+                    toggleFollow(user.id);
+                    if (!wasFollowing) fireBumpQuest("follow_1");
+                  }}
                   size="sm"
                 >
                   {following ? (

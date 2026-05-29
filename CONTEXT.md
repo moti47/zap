@@ -467,3 +467,43 @@ files must live under a folder matching the uploader's `auth.uid()`.
   - **Constraints.** Same as Polish 3/4: visuals unchanged,
     server-side persistence cohabits with the Zustand mirror, no
     working surface regressed.
+
+- ✅ **Polish 6 — hydration fix, buy actually buys, more quest
+  bumps.**
+  - **PostCard hydration mismatch.** Profile page threw "Hydration
+    failed because the server rendered HTML didn't match the
+    client" on `<ProfileTabs>` because the SSR pass rendered the
+    fixture `currentUser` (`name="You"`, initials avatar) while the
+    first client render already had the live viewer (real name +
+    avatar `<img>`), via the module-level `sharedViewer` populated
+    by an earlier mount. Added a `mounted` flag (`useState(false)`
+    + `useEffect(() => setMounted(true), [])`) and gated the
+    `isMineFlag` viewer-override on it — SSR and the very first
+    client render now both pick the fixture, and the live viewer
+    swaps in on the next pass (the normal post-mount transition
+    React tolerates).
+  - **Buy actually buys.** The user reported "the buy just doesn't
+    happen". Root cause was the `buyShares` Zustand action
+    short-circuiting on `if (cost > state.points) return` — the
+    Zustand `points` slice still held the prototype 50-Zap default
+    while the real `viewer.zaps` was 10M+. The DB RPC was firing
+    (positions inserted, balance debited server-side) but the
+    Zustand mirror never recorded the position, so the trade
+    panel's "current position" banner stayed empty and the user
+    correctly concluded nothing happened. Removed the silent gate;
+    the panel already gates the click against `viewer.zaps`.
+    `hydrateFromServer` now also accepts `zaps` and `ViewerBoot`
+    keeps the Zustand `points` in lockstep with `viewer.zaps`
+    whenever it changes (post-trade, post-claim, realtime updates).
+  - **More quest bumps wired to the server.** Comment + reply
+    (`comment_twice`, `reply_comment`) in `CommentThread`,
+    follow (`follow_1`) in `ProfileHero`, market bookmark
+    (`bookmark_2`) in `MarketCardCompact`. Earlier rounds wired
+    create_post / create_post_image / attach_market / trade_market
+    / like_5 / save_3. The remaining pool members
+    (`read_10_full`, `share_1`, `open_profile_3`) still bump
+    in-memory only — they fire on signals the server doesn't need
+    to authoritatively track yet.
+  - **Constraints.** Same as previous rounds: visuals unchanged,
+    backwards-compatible with no-env demo mode, type-check stays
+    100% clean.

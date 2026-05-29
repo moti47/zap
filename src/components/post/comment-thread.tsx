@@ -21,6 +21,7 @@ import { getUser, seededComments, type SeededComment } from "@/lib/fixtures";
 import { cn } from "@/lib/utils";
 import { TimeAgo } from "../ui/time-ago";
 import { createCommentAction } from "@/app/actions/social";
+import { fireBumpQuest } from "@/lib/quest-bump";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -119,6 +120,11 @@ export function CommentThread({
         if (!r.ok) toast.error(r.error || "Comment failed to save");
       });
     }
+    // Polish 6 — persist quest progress so "comment 2x" and "reply
+    // to a comment" survive reloads. Zustand's `addComment` already
+    // bumped the local counter; this writes through to profiles.
+    fireBumpQuest("comment_twice");
+    if (parentId) fireBumpQuest("reply_comment");
   };
 
   const submitTop = () => {

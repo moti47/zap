@@ -18,6 +18,7 @@ import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, timeUntil, cn } from "@/lib/utils";
 import { toggleMarketBookmarkAction } from "@/app/actions/social";
+import { fireBumpQuest } from "@/lib/quest-bump";
 
 interface MarketCardCompactProps {
   market: Market;
@@ -71,6 +72,7 @@ export function MarketCardCompact({ market, variant = "embedded" }: MarketCardCo
               const wasSaved = saved;
               toggleSave(market.id);
               toast.success(wasSaved ? "Removed from saved" : "Market saved");
+              if (!wasSaved) fireBumpQuest("bookmark_2");
               // Persist to DB so the bookmark survives reload + shows
               // up on /saved#markets. UUID-shaped ids only (fixture
               // markets stay local-only).

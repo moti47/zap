@@ -24,19 +24,33 @@ export function ViewerBoot() {
   const { viewer } = useViewer();
   const hydrate = useZapStore((s) => s.hydrateFromServer);
   const seededForId = useRef<string | null>(null);
+  const lastZaps = useRef<number | null>(null);
 
   useEffect(() => {
     if (!viewer) return;
-    if (seededForId.current === viewer.id) return;
-    seededForId.current = viewer.id;
-    hydrate({
-      questDay: viewer.quest_day ?? null,
-      questProgress: viewer.quest_progress ?? {},
-      questClaimed: viewer.quest_claimed ?? {},
-      streakCurrent: viewer.streak_current ?? 0,
-      streakLongest: viewer.streak_longest ?? 0,
-      streakLastCheckIn: viewer.streak_last_check_in ?? null,
-    });
+    const freshUser = seededForId.current !== viewer.id;
+    if (freshUser) {
+      seededForId.current = viewer.id;
+      lastZaps.current = viewer.zaps;
+      hydrate({
+        zaps: viewer.zaps,
+        questDay: viewer.quest_day ?? null,
+        questProgress: viewer.quest_progress ?? {},
+        questClaimed: viewer.quest_claimed ?? {},
+        streakCurrent: viewer.streak_current ?? 0,
+        streakLongest: viewer.streak_longest ?? 0,
+        streakLastCheckIn: viewer.streak_last_check_in ?? null,
+      });
+      return;
+    }
+    // Polish 6 — re-sync `points` whenever viewer.zaps changes (e.g. a
+    // trade reduced the balance, a quest claim added to it). Without
+    // this the Zustand mirror would drift from the real balance any
+    // time the realtime channel updated profiles.zaps.
+    if (lastZaps.current !== viewer.zaps) {
+      lastZaps.current = viewer.zaps;
+      hydrate({ zaps: viewer.zaps });
+    }
   }, [viewer, hydrate]);
 
   return null;

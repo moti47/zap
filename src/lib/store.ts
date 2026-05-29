@@ -239,8 +239,11 @@ interface ZapState {
    * Polish 5 — hydrate quest progress + streak from a server payload
    * (profile columns) so reloads don't reset the user's progress.
    * Accepts the canonical jsonb shape. No-ops when nothing was passed.
+   * Polish 6 — also accepts `zaps` so the Zustand `points` field
+   * mirrors the real `profiles.zaps` balance.
    */
   hydrateFromServer: (payload: {
+    zaps?: number;
     questDay?: string | null;
     questProgress?: Record<string, number>;
     questClaimed?: Record<string, boolean>;
@@ -323,7 +326,14 @@ export const useZapStore = create<ZapState>()(
       buyShares: (marketId, side, shares, price) => {
         const state = get();
         const cost = Math.round((shares * price) / 100);
-        if (cost > state.points) return;
+        // Polish 6 — DON'T gate on `state.points` here. The Zustand
+        // `points` field is the prototype-era 50-Zap balance; the real
+        // balance lives on `viewer.zaps` (via `useViewer`) and the
+        // trade panel already gates the click against that. Returning
+        // early here was the silent reason the user saw "the buy just
+        // doesn't happen" — the server RPC succeeded, the DB position
+        // was created, but the Zustand mirror never added a row so
+        // the trade panel's "current position" banner stayed empty.
         // count trade quest before the rest of the work
         get().bumpQuest("trade_market");
         const existing = state.positions.find(
@@ -808,6 +818,9 @@ export const useZapStore = create<ZapState>()(
       hydrateFromServer: (payload) => {
         const today = todayKey();
         const patch: Partial<ZapState> = {};
+        if (typeof payload.zaps === "number" && Number.isFinite(payload.zaps)) {
+          patch.points = Math.max(0, Math.floor(payload.zaps));
+        }
         if (typeof payload.questDay === "string" && payload.questDay === today) {
           patch.questDay = payload.questDay;
           if (payload.questProgress && typeof payload.questProgress === "object") {

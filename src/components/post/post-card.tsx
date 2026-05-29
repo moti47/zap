@@ -75,6 +75,19 @@ export function PostCard({
 }: PostCardProps) {
   const isMineFlag = isUserPost(post);
   const { viewer } = useViewer();
+  // Polish 6 — gate the viewer override on a post-mount flag so SSR
+  // (which has no viewer) and the FIRST client render both pick the
+  // fixture `currentUser` (= "You"). Without this React threw
+  // "Hydration failed because the server rendered HTML didn't match
+  // the client" on `/profile/[username]` — SSR rendered the initials
+  // span while the first client render rendered the live avatar
+  // `<img>`. Now they match; the override kicks in on the second
+  // render, which is the normal "after mount" pass that hydration
+  // tolerates.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const fixtureUser = isMineFlag ? currentUser : getUser(post.userId);
   // For Supabase posts whose author isn't in the fixture list, synthesize
   // a minimal User shape from the embedded author metadata.
@@ -103,7 +116,9 @@ export function PostCard({
   // baked into fixtures.currentUser. Falls back to the embedded
   // authorName/authorAvatar (set at post-create time) so old posts still
   // show the right identity even before useViewer resolves.
-  if (isMineFlag && user) {
+  // IMPORTANT: only apply after mount — see the hydration-mismatch note
+  // on `mounted` above.
+  if (isMineFlag && user && mounted) {
     const up = post as UserPost;
     user = {
       ...user,
