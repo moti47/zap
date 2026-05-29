@@ -235,6 +235,19 @@ interface ZapState {
   ensureDailyQuests: () => void;
   bumpQuest: (kind: QuestKind, delta?: number) => void;
   claimQuest: (kind: QuestKind) => number; // returns Zaps credited
+  /**
+   * Polish 5 — hydrate quest progress + streak from a server payload
+   * (profile columns) so reloads don't reset the user's progress.
+   * Accepts the canonical jsonb shape. No-ops when nothing was passed.
+   */
+  hydrateFromServer: (payload: {
+    questDay?: string | null;
+    questProgress?: Record<string, number>;
+    questClaimed?: Record<string, boolean>;
+    streakCurrent?: number;
+    streakLongest?: number;
+    streakLastCheckIn?: string | null;
+  }) => void;
   // Phase 11+ — Zap economy
   earnZaps: (amount: number, reason: string) => void;
   spendZaps: (amount: number, reason: string) => boolean;
@@ -778,12 +791,55 @@ export const useZapStore = create<ZapState>()(
         if (s.questDay === today && s.activeQuests.length === 3) return;
         const recent = s.activeQuests.map((q) => q.kind);
         const quests = pickDailyQuests("u-current", today, recent);
+        // Polish 5 — when ensureDailyQuests fires AFTER server
+        // hydration and the day matches, KEEP the counts/claimed map
+        // we already loaded from `profiles.quest_progress`. The
+        // server is the source of truth; this just generates the
+        // deterministic 3-pick list for today.
+        const dayMatches = s.questDay === today;
         set({
           questDay: today,
           activeQuests: quests,
-          questCounts: {},
-          questClaimed: {},
+          questCounts: dayMatches ? s.questCounts : {},
+          questClaimed: dayMatches ? s.questClaimed : {},
         });
+      },
+
+      hydrateFromServer: (payload) => {
+        const today = todayKey();
+        const patch: Partial<ZapState> = {};
+        if (typeof payload.questDay === "string" && payload.questDay === today) {
+          patch.questDay = payload.questDay;
+          if (payload.questProgress && typeof payload.questProgress === "object") {
+            patch.questCounts = payload.questProgress as ZapState["questCounts"];
+          }
+          if (payload.questClaimed && typeof payload.questClaimed === "object") {
+            patch.questClaimed = payload.questClaimed as ZapState["questClaimed"];
+          }
+        }
+        if (
+          typeof payload.streakCurrent === "number" ||
+          typeof payload.streakLongest === "number" ||
+          typeof payload.streakLastCheckIn === "string"
+        ) {
+          const existing = get().streak;
+          patch.streak = {
+            ...existing,
+            currentStreak:
+              typeof payload.streakCurrent === "number"
+                ? payload.streakCurrent
+                : existing.currentStreak,
+            longestStreak:
+              typeof payload.streakLongest === "number"
+                ? payload.streakLongest
+                : existing.longestStreak,
+            lastActiveDay:
+              typeof payload.streakLastCheckIn === "string"
+                ? payload.streakLastCheckIn
+                : existing.lastActiveDay,
+          };
+        }
+        if (Object.keys(patch).length > 0) set(patch as ZapState);
       },
 
       bumpQuest: (kind, delta = 1) => {

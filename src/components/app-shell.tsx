@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Topbar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LiveFeedProvider } from "./live-feed-provider";
+import { ViewerBoot } from "./viewer-boot";
 import { useHydrateZapStore } from "@/lib/store";
 
 interface AppShellProps {
@@ -24,6 +25,7 @@ export function AppShell({ children, hideTopbar = false }: AppShellProps) {
   return (
     <div className="min-h-screen flex flex-col">
       <LiveFeedProvider />
+      <ViewerBoot />
       {!hideTopbar && <Topbar />}
       <main className="flex-1 min-w-0">
         <PageTransition>{children}</PageTransition>

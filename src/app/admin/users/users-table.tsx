@@ -1,13 +1,24 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Search, ShieldCheck, Crown, UserCog, UserX, UserCheck } from "lucide-react";
+import {
+  Search,
+  ShieldCheck,
+  Crown,
+  UserCog,
+  UserX,
+  UserCheck,
+  ExternalLink,
+  RefreshCw,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   setUserRoleAction,
   setUserSuspendedAction,
   setUserZapsAction,
+  recomputeUserExpertiseAction,
 } from "./actions";
 import type { AdminUserRow, AdminRole } from "@/lib/db/admin-users";
 import { Button } from "@/components/ui/button";
@@ -238,7 +249,37 @@ export function UsersTable({ initialUsers, initialQuery }: UsersTableProps) {
                         : "—"}
                     </td>
                     <td className="px-4 py-3 align-middle">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <Link
+                          href={`/profile/${encodeURIComponent(user.username)}`}
+                          className="inline-flex items-center gap-1 text-[11px] font-mono text-[#8B92A8] hover:text-[#FFE600]"
+                          aria-label={`Open ${user.username}'s profile`}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          profile
+                        </Link>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => {
+                            setPendingId(user.id);
+                            startTransition(async () => {
+                              const r = await recomputeUserExpertiseAction(user.id);
+                              setPendingId(null);
+                              if (!r.ok) {
+                                toast.error(`Expertise recompute failed: ${r.error}`);
+                              } else {
+                                toast.success(
+                                  `Expertise refreshed (${r.touched} categor${r.touched === 1 ? "y" : "ies"})`,
+                                );
+                              }
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-mono text-[#4DA3FF] hover:underline disabled:opacity-50"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          recompute
+                        </button>
                         <div className="flex rounded-md border border-[#2A2F3D] overflow-hidden">
                           {ROLES.map((r) => (
                             <button

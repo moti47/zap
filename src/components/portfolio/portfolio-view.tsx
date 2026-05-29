@@ -73,6 +73,18 @@ export function PortfolioView({
 
   const balance = viewer?.zaps ?? initialBalance;
 
+  // Compact representation for the summary chips — 10,000,057 in a
+  // 200-px wide tile overflowed and looked broken. Anything ≥ 10k
+  // collapses to the locale-aware "10.0M / 1.2k" form.
+  const fmtCompact = (n: number): string => {
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000)
+      return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
+    if (abs >= 10_000)
+      return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
+    return n.toLocaleString();
+  };
+
   const rows = useMemo<Row[]>(() => {
     return initialPositions
       .map<Row | null>((p) => {
@@ -148,9 +160,9 @@ export function PortfolioView({
           <div className="text-[10px] uppercase tracking-widest text-[#5A6175] font-mono">
             Live balance
           </div>
-          <div className="text-2xl font-bold tabular-nums text-white inline-flex items-center gap-1.5">
+          <div className="text-lg sm:text-xl font-bold tabular-nums text-white inline-flex items-center gap-1.5">
             {balance.toLocaleString()}
-            <ZapMark className="h-4 w-4" />
+            <ZapMark className="h-3.5 w-3.5" />
           </div>
         </div>
       </header>
@@ -167,17 +179,17 @@ export function PortfolioView({
         />
         <SummaryStat
           label="Buy-in cost"
-          value={totals.staked.toLocaleString()}
+          value={fmtCompact(totals.staked)}
           icon={<Wallet className="h-3.5 w-3.5" />}
         />
         <SummaryStat
           label="Live valuation"
-          value={totals.value.toLocaleString()}
+          value={fmtCompact(totals.value)}
           icon={<ZapMark className="h-3.5 w-3.5" />}
         />
         <SummaryStat
           label={`Unrealized PnL${totals.staked > 0 ? ` · ${totals.pnlPct >= 0 ? "+" : ""}${totals.pnlPct}%` : ""}`}
-          value={`${totals.pnl >= 0 ? "+" : ""}${totals.pnl.toLocaleString()}`}
+          value={`${totals.pnl >= 0 ? "+" : ""}${fmtCompact(totals.pnl)}`}
           icon={
             totals.pnl >= 0 ? (
               <TrendingUp className="h-3.5 w-3.5" />
@@ -248,19 +260,19 @@ function SummaryStat({
   plain?: boolean;
 }) {
   return (
-    <div className="bg-[#1A1D26] p-4">
-      <div className="text-[10px] uppercase tracking-widest text-[#5A6175] font-mono inline-flex items-center gap-1">
+    <div className="bg-[#1A1D26] p-3 min-w-0">
+      <div className="text-[9.5px] uppercase tracking-widest text-[#5A6175] font-mono inline-flex items-center gap-1 truncate w-full">
         {icon}
-        {label}
+        <span className="truncate">{label}</span>
       </div>
       <div
         className={cn(
-          "mt-1 text-xl font-bold tabular-nums inline-flex items-center gap-1",
+          "mt-0.5 text-[15px] sm:text-base font-bold tabular-nums inline-flex items-center gap-1 truncate",
           colorClass ?? "text-white",
         )}
       >
-        {value}
-        {!plain && <ZapMark className="h-3.5 w-3.5" />}
+        <span className="truncate">{value}</span>
+        {!plain && <ZapMark className="h-3 w-3 shrink-0" />}
       </div>
     </div>
   );

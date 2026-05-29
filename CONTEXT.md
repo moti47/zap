@@ -406,3 +406,64 @@ files must live under a folder matching the uploader's `auth.uid()`.
     sonner styling) unchanged. No working surfaces regressed; new
     server-side persistence layers cohabit with the existing
     Zustand mirrors so the offline / no-env demo still works.
+
+- ✅ **Polish 5 — Zustand server-hydration, expertise v2, post detail
+  route, admin recovery doc, lean topbar dropdown.**
+  - **`ViewerBoot` hydrates Zustand from `profiles`.** The user kept
+    saying "quests reset every visit, streak goes back to 0" — they
+    were right: Zustand has no `persist`, so every reload picks fresh
+    daily quests and resets `currentStreak`. `lib/use-viewer.ts` was
+    extended to also `select` `quest_day / quest_progress /
+    quest_claimed / streak_current / streak_longest /
+    streak_last_check_in` from `profiles`. New
+    `components/viewer-boot.tsx` is mounted once in `AppShell` and
+    pushes those fields into Zustand via a new
+    `useZapStore.hydrateFromServer({...})` action. `ensureDailyQuests`
+    now preserves existing counts/claimed when the day already
+    matches, so a refresh keeps everything the server says we have.
+  - **Expertise v2 (migration 0012).** Replaces the 0.5 default with
+    "everyone starts at 0". New SQL function
+    `recompute_user_expertise(user_id)` walks every category the user
+    has resolved positions in and rebuilds `reputation_metrics` with
+    a real composite:
+    `0.40·accuracy + 0.25·calibration + 0.10·conviction +
+     0.10·consistency + 0.15·volume_ramp` (all 0..1, composite ×
+     100 = the rendered score). Tiers: `new < bronze < silver < gold
+     < diamond < legend`. A new `recompute_expertise_on_resolve`
+    trigger fires when `markets.status` flips to `resolved` and
+    recomputes every holder for that category — so the score updates
+    organically as markets settle.
+  - **Admin user management — link + recompute.** `UsersTable` row
+    now exposes (a) an `ExternalLink` chip routing to
+    `/profile/{username}` so admins can deep-jump into any user's
+    profile and (b) a `RefreshCw` chip wired to a new
+    `recomputeUserExpertiseAction` server action calling the RPC
+    above. Returns the touched-category count for a useful toast.
+  - **Smaller Portfolio summary tiles.** `10,000,057⚡` was breaking
+    the 4-column grid layout. Added a `fmtCompact` helper that
+    collapses ≥10k to `12.3k`, ≥1M to `10.0M`. Tile font shrunk to
+    `text-base` (`sm:text-base`), label gained a `truncate`, the
+    live-balance line dropped to `text-lg`. Everything fits.
+  - **Topbar avatar menu trimmed.** Removed the redundant "Edit
+    Profile" link from the dropdown (My Profile is already there;
+    the user said the extra entry was clutter). Pencil import
+    dropped.
+  - **`/post/[id]` route.** Global search posts used to point at
+    `/feed#post-{id}` (no scroll, no comment open) — clicking did
+    nothing visible. New `app/post/[id]/page.tsx` SSR-fetches the
+    row via `getPost`, renders `<PostCard defaultThreadOpen>` with
+    the full body and the comment thread expanded, and exposes a
+    "Back to feed" link. Search results now route here. The
+    post-card timestamp on the feed also becomes a `<Link>` to
+    `/post/{id}` for UUID-shaped ids — gives every post a
+    permalink.
+  - **`ADMIN_RECOVERY.md`.** Step-by-step doc for the case where a
+    user (probably the env-pinned admin) accidentally flipped
+    `is_admin = false` on themselves and the `enforce_admin_pin_trg`
+    trigger now blocks re-setting it without first pinning
+    `app.admin_user_id` in the DB. Two recovery paths: pin the GUC
+    (Option A) or use the un-triggered `role = 'admin'` column
+    (Option B).
+  - **Constraints.** Same as Polish 3/4: visuals unchanged,
+    server-side persistence cohabits with the Zustand mirror, no
+    working surface regressed.

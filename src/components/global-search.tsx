@@ -77,9 +77,11 @@ function flatten(r: SearchResults | null): FlatResult[] {
       return {
         kind: "post" as const,
         id: p.id,
-        href: p.market_id
-          ? `/market/${p.market_id}#post-${p.id}`
-          : `/feed#post-${p.id}`,
+        // Polish 5 — link to the dedicated /post/[id] route so the
+        // full body + comment thread are visible. The old hash-anchor
+        // hop into /feed never scrolled to the post and never opened
+        // the comments.
+        href: `/post/${p.id}`,
         title: text || "(post)",
         subtitle: p.author
           ? `@${p.author.username} · ${p.category?.name ?? ""}`

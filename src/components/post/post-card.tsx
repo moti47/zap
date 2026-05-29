@@ -390,7 +390,20 @@ export function PostCard({
           </div>
           <div className="text-xs font-mono text-[#5A6175] mt-0.5">
             <span className="text-[#8B92A8]">@{user.username}</span> ·{" "}
-            <TimeAgo iso={post.createdAt} />
+            {/* Polish 5 — timestamp doubles as the "open full thread"
+                link so search results / mentions / shared URLs can land
+                on /post/[id] with full body + comments. Only UUID-shaped
+                ids (real Supabase rows) get the link treatment. */}
+            {looksLikeServerPostId(post.id) ? (
+              <Link
+                href={`/post/${post.id}`}
+                className="hover:text-[#FFE600] hover:underline underline-offset-2"
+              >
+                <TimeAgo iso={post.createdAt} />
+              </Link>
+            ) : (
+              <TimeAgo iso={post.createdAt} />
+            )}
             {isPrediction
               ? ` · staked ${(post as any).staked}⚡`
               : post.views > 0

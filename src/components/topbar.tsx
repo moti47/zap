@@ -9,7 +9,6 @@ import {
   Plus,
   Menu,
   User as UserIcon,
-  Pencil,
   LogOut,
   Wallet,
   X,
@@ -266,12 +265,6 @@ export function Topbar() {
                   <Link href="/profile/you" className="cursor-pointer">
                     <UserIcon className="h-4 w-4 mr-2 text-[#8B92A8]" />
                     My Profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/profile/edit" className="cursor-pointer">
-                    <Pencil className="h-4 w-4 mr-2 text-[#8B92A8]" />
-                    Edit Profile
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>

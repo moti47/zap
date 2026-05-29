@@ -100,6 +100,15 @@ export interface Viewer {
   zaps: number;
   is_admin: boolean;
   updated_at: string;
+  // Polish 5 — server-side quest + streak hydration payload. All
+  // optional because the columns only exist after migration 0011 is
+  // applied (clients without it just see undefined).
+  quest_day?: string | null;
+  quest_progress?: Record<string, number>;
+  quest_claimed?: Record<string, boolean>;
+  streak_current?: number;
+  streak_longest?: number;
+  streak_last_check_in?: string | null;
 }
 
 interface State {
@@ -114,10 +123,15 @@ async function fetchViewer(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+  // Polish 5 — pull quest + streak columns alongside the identity
+  // payload so a single round-trip can re-hydrate the Zustand mirror.
+  // Tolerates the absence of these columns (migration 0011 not yet
+  // applied) — they fall back to undefined and the existing client
+  // defaults take over.
   const { data: row } = await supabase
     .from("profiles")
     .select(
-      "id, username, name, avatar_url, banner_url, bio, zaps, is_admin, role, updated_at",
+      "id, username, name, avatar_url, banner_url, bio, zaps, is_admin, role, updated_at, quest_day, quest_progress, quest_claimed, streak_current, streak_longest, streak_last_check_in",
     )
     .eq("id", user.id)
     .maybeSingle();
@@ -135,6 +149,12 @@ async function fetchViewer(
       Boolean(row.is_admin) ||
       (typeof row.role === "string" && row.role === "admin"),
     updated_at: row.updated_at ?? new Date().toISOString(),
+    quest_day: (row as any).quest_day ?? null,
+    quest_progress: (row as any).quest_progress ?? {},
+    quest_claimed: (row as any).quest_claimed ?? {},
+    streak_current: (row as any).streak_current ?? 0,
+    streak_longest: (row as any).streak_longest ?? 0,
+    streak_last_check_in: (row as any).streak_last_check_in ?? null,
   };
 }
 
