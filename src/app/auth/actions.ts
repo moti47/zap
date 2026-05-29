@@ -5,6 +5,12 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  SignInInput,
+  SignUpInput,
+  MagicLinkInput,
+  formatZodError,
+} from "@/lib/validation";
 
 /**
  * Guard for the demo-mode (no Supabase env) build. Every auth action
@@ -41,64 +47,51 @@ const NO_ENV_ERROR =
  * to the new state without a manual reload.
  */
 
-const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
-
 export async function signInWithPassword(
-  email: string,
-  password: string,
-  next: string,
+  email: unknown,
+  password: unknown,
+  next: unknown,
 ): Promise<{ ok: true; next: string } | { error: string }> {
   if (!hasSupabaseEnv()) return { error: NO_ENV_ERROR };
-  if (!email || !password) {
-    return { error: "Email and password are required" };
-  }
+  const parsed = SignInInput.safeParse({ email, password, next });
+  if (!parsed.success) return { error: formatZodError(parsed.error) };
+  const v = parsed.data;
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error } = await supabase.auth.signInWithPassword({
+    email: v.email,
+    password: v.password,
+  });
   if (error) return { error: error.message };
   // Return next URL — the client navigates inside the same React
   // transition so the form's `pending` state stays true through the
   // navigation. Server-side `redirect()` returns control too early
   // and makes the spinner disappear before the target page paints.
-  return { ok: true, next: next || "/" };
+  return { ok: true, next: v.next || "/" };
 }
 
-export async function signInWithMagicLink(email: string) {
+export async function signInWithMagicLink(email: unknown) {
   if (!hasSupabaseEnv()) return { error: NO_ENV_ERROR };
-  if (!email) return { error: "Email is required" };
+  const parsed = MagicLinkInput.safeParse({ email });
+  if (!parsed.success) return { error: formatZodError(parsed.error) };
   const supabase = await createClient();
   const h = await headers();
   const origin =
     h.get("origin") ?? `https://${h.get("host") ?? "localhost:3000"}`;
   const { error } = await supabase.auth.signInWithOtp({
-    email,
+    email: parsed.data.email,
     options: { emailRedirectTo: `${origin}/auth/callback` },
   });
   if (error) return { error: error.message };
   return { ok: true };
 }
 
-export async function signUpWithPassword(input: {
-  email: string;
-  password: string;
-  name: string;
-  username: string;
-  next: string;
-}): Promise<{ ok: true; next: string } | { error: string }> {
+export async function signUpWithPassword(
+  input: unknown,
+): Promise<{ ok: true; next: string } | { error: string }> {
   if (!hasSupabaseEnv()) return { error: NO_ENV_ERROR };
-  const username = (input.username || "").trim().toLowerCase();
-  const name = (input.name || "").trim();
-  const email = (input.email || "").trim();
-
-  if (!name) return { error: "Display name is required" };
-  if (!USERNAME_RE.test(username)) {
-    return {
-      error: "Username must be 3–20 chars: lowercase letters, numbers, or _",
-    };
-  }
-  if (!email) return { error: "Email is required" };
-  if (!input.password || input.password.length < 6) {
-    return { error: "Password must be at least 6 characters" };
-  }
+  const parsed = SignUpInput.safeParse(input);
+  if (!parsed.success) return { error: formatZodError(parsed.error) };
+  const v = parsed.data;
 
   // Pre-flight username uniqueness check via the service-role client
   // (the username column has a UNIQUE index, but checking here lets us
@@ -108,7 +101,7 @@ export async function signUpWithPassword(input: {
     const { data: existing } = await svc
       .from("profiles")
       .select("id")
-      .eq("username", username)
+      .eq("username", v.username)
       .maybeSingle();
     if (existing) {
       return { error: "That username is already taken" };
@@ -124,11 +117,11 @@ export async function signUpWithPassword(input: {
     h.get("origin") ?? `https://${h.get("host") ?? "localhost:3000"}`;
 
   const { error } = await supabase.auth.signUp({
-    email,
-    password: input.password,
+    email: v.email,
+    password: v.password,
     options: {
-      data: { name, username },
-      emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(input.next)}`,
+      data: { name: v.name, username: v.username },
+      emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(v.next)}`,
     },
   });
   if (error) {
@@ -140,9 +133,7 @@ export async function signUpWithPassword(input: {
   }
   // Client-side navigation inside the same transition — see
   // signInWithPassword note above.
-  return { ok: true, next: input.next || "/onboarding" } as
-    | { ok: true; next: string }
-    | { error: string };
+  return { ok: true, next: v.next || "/onboarding" };
 }
 
 export async function signOut() {

@@ -196,6 +196,20 @@ export function ProfileHero({
             />
           </div>
           <div className="text-[#8B92A8] font-mono text-sm mt-1">@{user.username}</div>
+          {/* Item #7 — compact inline followers/following line for parity
+              with the rest of the surface. Stat tiles below still render
+              the canonical values; this is the quick-glance copy. */}
+          <div className="mt-1.5 text-[12.5px] font-mono text-[#8B92A8]">
+            <span className="text-white font-semibold">
+              {formatLargeNumber(user.followers)}
+            </span>{" "}
+            Followers
+            <span className="text-[#5A6175]"> · </span>
+            <span className="text-white font-semibold">
+              {user.following.toLocaleString()}
+            </span>{" "}
+            Following
+          </div>
         </div>
 
         <p className="mt-3 text-[15px] text-[#E5E5E5] max-w-2xl leading-relaxed whitespace-pre-wrap">{displayBio}</p>
@@ -211,9 +225,9 @@ export function ProfileHero({
           <Stat label="Following" value={user.following.toLocaleString()} />
           <Stat label="Predictions" value={user.totalPredictions.toLocaleString()} />
           <Stat
-            label="Points won"
+            label="Zaps won"
             value={
-              <span className="inline-flex items-center">
+              <span className="inline-flex items-center gap-1">
                 {formatLargeNumber(user.pointsWon)}
                 <ZapMark />
               </span>

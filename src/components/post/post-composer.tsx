@@ -21,6 +21,7 @@ import { MentionPopover } from "./mention-popover";
 import { CategoryPicker } from "./category-picker";
 import { ChevronRight } from "lucide-react";
 import { useZapStore } from "@/lib/store";
+import { useViewer } from "@/lib/use-viewer";
 import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { extractMentions } from "@/lib/mentions";
 import { notifyMentionsAction } from "@/app/feed/actions";
@@ -49,7 +50,13 @@ export function PostComposer({
 }: PostComposerProps) {
   const router = useRouter();
   const addPost = useZapStore((s) => s.addPost);
-  const balance = useZapStore((s) => s.points);
+  const replaceLocalPostId = useZapStore((s) => s.replaceLocalPostId);
+  // Round-2 — boost-cost gating must use the real DB balance, not the
+  // Zustand 50-Zap default. Otherwise signed-in users with a real
+  // balance get "Not enough Zaps to boost" toasts wrongly.
+  const storeBalance = useZapStore((s) => s.points);
+  const { viewer: composerViewer } = useViewer();
+  const balance = composerViewer ? composerViewer.zaps : storeBalance;
   const upsertDraft = useZapStore((s) => s.upsertDraft);
   const deleteDraft = useZapStore((s) => s.deleteDraft);
 
@@ -105,6 +112,19 @@ export function PostComposer({
   useEffect(() => {
     if (autoFocus) editorRef.current?.focus();
   }, [autoFocus]);
+
+  // Item #3 — Topbar "+ Compose" dispatches `zap:focus-composer` after
+  // a smooth-scroll to top. Only the in-feed variant should react; the
+  // modal variant must not steal focus when an unrelated event fires.
+  useEffect(() => {
+    if (variant !== "feed") return;
+    const onFocusComposer = () => {
+      requestAnimationFrame(() => editorRef.current?.focus());
+    };
+    window.addEventListener("zap:focus-composer", onFocusComposer);
+    return () =>
+      window.removeEventListener("zap:focus-composer", onFocusComposer);
+  }, [variant]);
 
   const reset = () => {
     editorRef.current?.clear();
@@ -208,9 +228,16 @@ export function PostComposer({
       });
       return;
     }
-    // Persist to Supabase. Fire-and-forget — the optimistic local
-    // post (newPost) already shows in the feed. If the server save
-    // fails (e.g. signed out), we surface a toast and keep the local
+    // Persist to Supabase. The optimistic local post (newPost) already
+    // shows in the feed. Once the server insert succeeds we:
+    //   1. Swap the temp `up-…` id for the real Supabase UUID so the
+    //      feed-stream dedupes correctly against `initialServerPosts`
+    //      on the next snapshot pass (otherwise the post would render
+    //      twice — once from Zustand, once from the server fetch).
+    //   2. Call `router.refresh()` so any other surface backed by the
+    //      RSC cache (the profile page, /feed) sees the new row
+    //      immediately, no manual reload required.
+    // If the server save fails we surface a toast and keep the local
     // copy so the user doesn't lose their draft.
     if (category) {
       void createPostAction({
@@ -223,7 +250,12 @@ export function PostComposer({
           ? new Date(Date.now() + boostDurationH * 3600 * 1000).toISOString()
           : null,
       }).then((result) => {
-        if (!result.ok) {
+        if (result.ok && result.id && newPost) {
+          replaceLocalPostId(newPost.id, result.id);
+          // Re-fetch the server-rendered initialServerPosts so the post
+          // also shows up after a hard reload.
+          router.refresh();
+        } else if (!result.ok) {
           // Only complain if the user is signed in — anonymous users
           // never expect server persistence.
           if (!/sign(ed)? in/i.test(result.error)) {
@@ -274,6 +306,7 @@ export function PostComposer({
     boostDurationH,
     balance,
     isPublishing,
+    replaceLocalPostId,
   ]);
 
   // Image upload — posts to /api/upload (Supabase Storage when configured,

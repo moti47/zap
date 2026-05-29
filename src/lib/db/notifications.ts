@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { NotificationRow } from "@/lib/supabase/types";
+import { NotSignedInError } from "@/lib/auth";
 
 export type NotificationKind =
   | "follow"
@@ -74,7 +75,7 @@ export async function markAllRead() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
   const { error } = await supabase
     .from("notifications")
     .update({ read: true })
@@ -88,7 +89,7 @@ export async function markOneRead(id: string) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
   const { error } = await supabase
     .from("notifications")
     .update({ read: true })

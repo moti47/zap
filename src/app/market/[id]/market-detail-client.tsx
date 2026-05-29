@@ -8,7 +8,6 @@ import { PriceChart } from "@/components/market/price-chart";
 import { TradePanel } from "@/components/market/trade-panel";
 import { MarketTabs } from "@/components/market/market-tabs";
 import { MarketHeroImage } from "@/components/market/market-hero-image";
-import { MarketAISummary } from "@/components/market/market-ai-summary";
 import { ShareCardButton } from "@/components/market/share-card-button";
 import { ResolveMarketDialog } from "@/components/market/resolve-market-dialog";
 import { Button } from "@/components/ui/button";
@@ -120,8 +119,8 @@ export function MarketDetailClient({
             </h1>
 
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-px bg-[#2A2F3D] rounded-md overflow-hidden border border-[#2A2F3D]">
-              <Stat label="YES" value={`${yesPrice}¢`} className="text-[#00D982]" />
-              <Stat label="NO" value={`${noPrice}¢`} className="text-[#FF4757]" />
+              <Stat label="YES" value={`${yesPrice}%`} className="text-[#00D982]" />
+              <Stat label="NO" value={`${noPrice}%`} className="text-[#FF4757]" />
               <Stat
                 label="Volume"
                 value={
@@ -135,8 +134,7 @@ export function MarketDetailClient({
             </div>
           </div>
 
-          {/* AI Summary */}
-          <MarketAISummary market={market} />
+          {/* AI Summary card removed in Item #4. */}
 
           {/* Chart */}
           <div className="mt-6 rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] p-5 lg:p-6">
@@ -189,14 +187,14 @@ export function MarketDetailClient({
             className="flex-1"
             onClick={() => setTradeSheetOpen(true)}
           >
-            Buy YES · {yesPrice}¢
+            Buy YES · {yesPrice}%
           </Button>
           <Button
             variant="no"
             className="flex-1"
             onClick={() => setTradeSheetOpen(true)}
           >
-            Buy NO · {noPrice}¢
+            Buy NO · {noPrice}%
           </Button>
         </div>
       </div>

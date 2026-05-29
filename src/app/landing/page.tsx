@@ -132,7 +132,7 @@ export default function LandingPage() {
             {
               n: "02",
               title: "Take a position",
-              body: "Markets resolve YES or NO. Buy YES at 38¢ → if it resolves YES you get 1.00 per share. Up to 2.6× profit.",
+              body: "Markets resolve YES or NO. Buy YES at 38% probability → if it resolves YES you get 1.00 per share. Up to 2.6× profit.",
             },
             {
               n: "03",

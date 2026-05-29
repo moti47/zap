@@ -23,6 +23,17 @@
 import "server-only";
 import { createClient } from "./supabase/server";
 
+/**
+ * Typed error so callers can distinguish "not signed in" / "signed in
+ * but not admin" / generic failure paths via instanceof checks.
+ */
+export class NotAdminError extends Error {
+  readonly code = "NOT_ADMIN";
+  constructor() {
+    super("Admin access required");
+  }
+}
+
 export async function isCurrentUserAdmin(): Promise<boolean> {
   const adminId = process.env.ADMIN_USER_ID;
   if (!adminId) return false;
@@ -33,8 +44,8 @@ export async function isCurrentUserAdmin(): Promise<boolean> {
   if (!user || user.id !== adminId) return false;
 
   // Belt + suspenders: confirm the column agrees. If the row hasn't
-  // been promoted yet (no migration applied), still trust the env
-  // match so the bootstrap flow works.
+  // been read at all (bootstrap before migrations), trust the env match
+  // so the bootstrap flow works.
   const { data: row } = await supabase
     .from("profiles")
     .select("is_admin, role")
@@ -43,16 +54,14 @@ export async function isCurrentUserAdmin(): Promise<boolean> {
   if (!row) return true;
   return (
     Boolean(row.is_admin) ||
-    (typeof row.role === "string" && row.role === "admin") ||
-    // Final fallback: env matches AND we couldn't read the flag.
-    true
+    (typeof row.role === "string" && row.role === "admin")
   );
 }
 
 export async function requireAdmin(): Promise<void> {
   const ok = await isCurrentUserAdmin();
   if (!ok) {
-    throw new Error("Forbidden: admin only");
+    throw new NotAdminError();
   }
 }
 

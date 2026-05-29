@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { markAllRead, markOneRead } from "@/lib/db/notifications";
 import { requireUser, NotSignedInError } from "@/lib/auth";
+import { MarkOneReadInput, formatZodError } from "@/lib/validation";
 
 export async function markAllReadAction(): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -16,10 +17,12 @@ export async function markAllReadAction(): Promise<{ ok: boolean; error?: string
   }
 }
 
-export async function markOneReadAction(id: string) {
+export async function markOneReadAction(id: unknown) {
   try {
     await requireUser();
-    await markOneRead(id);
+    const parsed = MarkOneReadInput.safeParse({ id });
+    if (!parsed.success) return { ok: false, error: formatZodError(parsed.error) };
+    await markOneRead(parsed.data.id);
     revalidatePath("/notifications");
     return { ok: true };
   } catch (err) {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { listPendingProposals } from "@/lib/db/proposals";
-import { ShieldCheck, PlusCircle, ListChecks } from "lucide-react";
+import { ShieldCheck, PlusCircle, ListChecks, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +56,22 @@ export default async function AdminHome() {
           <p className="text-[12px] text-[#8B92A8]">
             Spin up a new binary market with question, category, resolution
             date, source, and initial YES price.
+          </p>
+        </Link>
+
+        <Link
+          href="/admin/users"
+          className="group rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] p-5 hover:border-[#FFE600]/40 transition-colors"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <span className="h-9 w-9 rounded-[10px] grid place-items-center bg-[#36D399]/15 border border-[#36D399]/30 text-[#36D399]">
+              <Users className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-bold text-white">Manage users</h2>
+          </div>
+          <p className="text-[12px] text-[#8B92A8]">
+            Granular control over every profile: role (user / moderator /
+            admin), account status, and Zap balance.
           </p>
         </Link>
 

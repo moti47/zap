@@ -21,7 +21,8 @@ import {
   markAllReadAction,
   markOneReadAction,
 } from "@/app/notifications/actions";
-import { timeAgo, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { TimeAgo } from "./ui/time-ago";
 import type {
   NotificationWithPayload,
   NotificationKind,
@@ -265,7 +266,7 @@ function Row({
           </div>
         )}
         <div className="text-[10px] font-mono text-[#5A6175] mt-1">
-          {timeAgo(n.created_at)} ago
+          <TimeAgo iso={n.created_at} /> ago
         </div>
       </div>
       {!n.read && (

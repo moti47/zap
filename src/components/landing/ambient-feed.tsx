@@ -111,7 +111,7 @@ export function AmbientFeed() {
                 {i % 2 === 0 ? "▲" : "▼"} {(60 + i * 30) * 2}
               </span>
               <span className="font-mono text-[#5A6175] text-[11px]">
-                @ {30 + i * 3}¢
+                @ {30 + i * 3}%
               </span>
               <span className="ml-auto font-mono text-[10px] text-[#5A6175]">
                 {i + 2}s

@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/admin";
+import { NotSignedInError } from "@/lib/auth";
 
 /**
  * Section 27 — market proposals.
@@ -27,7 +28,7 @@ export async function submitProposal(input: ProposalInput) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
 
   const { data, error } = await supabase
     .from("market_proposals")

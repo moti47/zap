@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Check, Search } from "lucide-react";
 import { Category, CATEGORIES } from "@/lib/types";
 import { cn, categoryColor } from "@/lib/utils";
+import { getCategoryStyle } from "@/lib/constants/categories";
 
 interface CategoryMeta {
   title: string;
@@ -68,13 +70,16 @@ const CATEGORY_DETAILS: Record<string, CategoryMeta> = {
 };
 
 function metaFor(slug: string): CategoryMeta {
-  return (
-    CATEGORY_DETAILS[slug] ?? {
-      title: slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      description: "—",
-      icon: "🏷️",
-    }
-  );
+  if (CATEGORY_DETAILS[slug]) return CATEGORY_DETAILS[slug];
+  // Round-2 — fall back to the central CATEGORY_STYLE_MAP so any DB
+  // slug not in the curated picker list still renders with the right
+  // icon + display name instead of a generic 🏷️.
+  const central = getCategoryStyle(slug);
+  return {
+    title: central.name,
+    description: "—",
+    icon: central.icon,
+  };
 }
 
 interface CategoryPickerProps {
@@ -148,7 +153,11 @@ export function CategoryPicker({
     return () => window.removeEventListener("keydown", handler);
   }, [open, activeIndex, filtered, onChange, onClose]);
 
-  return (
+  // Render into document.body so framer-motion transforms on ancestor
+  // elements (PageTransition) don't break position:fixed descendants.
+  if (typeof window === "undefined") return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
@@ -340,6 +349,7 @@ export function CategoryPicker({
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

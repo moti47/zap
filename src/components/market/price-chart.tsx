@@ -73,7 +73,7 @@ export function PriceChart({ history, currentPrice, className }: PriceChartProps
               className="text-4xl font-bold font-mono tabular-nums"
               style={{ color }}
             >
-              {currentPrice}¢
+              {currentPrice}%
             </span>
             <span
               className="font-mono text-sm tabular-nums"
@@ -135,7 +135,7 @@ export function PriceChart({ history, currentPrice, className }: PriceChartProps
               fontFamily="var(--font-mono)"
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => `${v}¢`}
+              tickFormatter={(v) => `${v}%`}
               width={36}
             />
             <Tooltip
@@ -147,7 +147,7 @@ export function PriceChart({ history, currentPrice, className }: PriceChartProps
                 fontSize: 12,
               }}
               labelFormatter={(v) => format(parseISO(v as string), "MMM d, yyyy")}
-              formatter={(v) => [`${v}¢`, "YES"]}
+              formatter={(v) => [`${v}% Probability`, "YES"]}
               labelStyle={{ color: "#8B92A8" }}
             />
             <ReferenceLine y={50} stroke="#353B4D" strokeDasharray="3 3" />

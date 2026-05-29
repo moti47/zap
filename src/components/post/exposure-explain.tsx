@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Info,
   Rocket,
@@ -11,8 +11,18 @@ import {
   Sparkles,
   Hash,
   Target,
+  ThumbsDown,
+  ThumbsUp,
+  ChevronDown,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "../ui/dialog";
 import { useZapStore } from "@/lib/store";
 import { computeExposure } from "@/lib/exposure";
 import { scorePost, sessionBucket, type PersonalizedBreakdown } from "@/lib/ranking";
@@ -30,6 +40,15 @@ interface ExposureExplainProps {
    * where it ranked when the user opened the feed.
    */
   rankingBreakdown?: PersonalizedBreakdown;
+  /**
+   * Item #4 — when the explain panel is launched from the post 3-dots
+   * context menu, the parent owns the open state and we render the
+   * panel as a centered Dialog instead of a popover. The Info-button
+   * trigger is suppressed in this mode.
+   */
+  controlledOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
 interface Row {
@@ -47,10 +66,15 @@ export function ExposureExplain({
   author,
   category,
   rankingBreakdown,
+  controlledOpen,
+  onOpenChange,
+  hideTrigger,
 }: ExposureExplainProps) {
+  const [debugOpen, setDebugOpen] = useState(false);
   const affinity = useZapStore((s) => s.affinity[category] ?? 0.3);
   const affinityGraph = useZapStore((s) => s.affinityGraph);
   const sessionState = useZapStore((s) => s.session);
+  const storeApplySignal = useZapStore((s) => s.applySignal);
   const impressionsFromStore = useZapStore(
     (s) => s.postImpressions[post.id] ?? 0,
   );
@@ -181,26 +205,21 @@ export function ExposureExplain({
   const topReasons = personalized.topReasons;
   const bucket = sessionBucket();
 
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Why am I seeing this?"
-          className="text-[#5A6175] hover:text-[#FFE600] transition-colors p-1"
-        >
-          <Info className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[360px] p-0 overflow-hidden text-[12px]"
-      >
+  const body = (
+    <>
         <div className="px-4 py-3 border-b border-[#2A2F3D] flex items-center justify-between">
           <div>
             <div className="font-semibold text-white">Why am I seeing this?</div>
-            <div className="text-[10px] font-mono text-[#5A6175] mt-0.5">
-              final_score = {personalized.finalScore.toFixed(3)} · legacy = {legacy.score.toFixed(3)}
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-1.5 w-24 rounded-full bg-[#0E1016] overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-[#FFE600]"
+                  style={{ width: `${Math.round(personalized.finalScore * 100)}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-mono text-[#8B92A8]">
+                {Math.round(personalized.finalScore * 100)}% match
+              </span>
             </div>
           </div>
           <div
@@ -293,10 +312,95 @@ export function ExposureExplain({
               −{personalized.cooldownPenalty.toFixed(2)} cooldown penalty (3 throttles in 7d)
             </div>
           )}
-          <div className="text-[10px] text-[#5A6175] pt-1 border-t border-[#2A2F3D] font-mono">
-            session: {bucket}
-          </div>
+
+          {/* Debug toggle */}
+          <button
+            type="button"
+            onClick={() => setDebugOpen((v) => !v)}
+            className="flex items-center gap-1 text-[10px] font-mono text-[#5A6175] hover:text-[#8B92A8] transition-colors pt-1 border-t border-[#2A2F3D]"
+          >
+            <ChevronDown
+              className={cn("h-3 w-3 transition-transform", debugOpen && "rotate-180")}
+            />
+            Debug details
+          </button>
+          {debugOpen && (
+            <div className="text-[10px] font-mono text-[#5A6175] space-y-0.5">
+              <div>final_score: {personalized.finalScore.toFixed(4)}</div>
+              <div>legacy: {legacy.score.toFixed(4)}</div>
+              <div>session: {bucket}</div>
+            </div>
+          )}
         </div>
+
+        {/* Tune actions */}
+        <div className="px-3 py-3 border-t border-[#2A2F3D] flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              storeApplySignal("hide_post", {
+                category,
+                authorId: author.id,
+              });
+              toast.success(`Less ${category} in your feed`);
+            }}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-md border border-[#2A2F3D] text-[11.5px] font-mono text-[#8B92A8] hover:border-[#FF4757]/50 hover:text-[#FF4757] transition-colors"
+          >
+            <ThumbsDown className="h-3.5 w-3.5" />
+            Not interested
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              storeApplySignal("like", {
+                category,
+                authorId: author.id,
+              });
+              toast.success(`More ${category} coming up`);
+            }}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-md border border-[#2A2F3D] text-[11.5px] font-mono text-[#8B92A8] hover:border-[#36D399]/50 hover:text-[#36D399] transition-colors"
+          >
+            <ThumbsUp className="h-3.5 w-3.5" />
+            See more
+          </button>
+        </div>
+    </>
+  );
+
+  // Item #4 — Controlled dialog mode (launched from the post 3-dots menu).
+  if (controlledOpen !== undefined) {
+    return (
+      <Dialog open={controlledOpen} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden text-[12px]">
+          <DialogTitle className="sr-only">Why am I seeing this?</DialogTitle>
+          <DialogDescription className="sr-only">
+            Explanation of the ranking factors that surfaced this post in your feed.
+          </DialogDescription>
+          {body}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Default popover mode (back-compat for any callers still using the
+  // inline Info-button trigger).
+  if (hideTrigger) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Why am I seeing this?"
+          className="text-[#5A6175] hover:text-[#FFE600] transition-colors p-1"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[360px] p-0 overflow-hidden text-[12px]"
+      >
+        {body}
       </PopoverContent>
     </Popover>
   );

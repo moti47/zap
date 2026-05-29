@@ -7,10 +7,13 @@ import { ChevronUp } from "lucide-react";
 import { PostCard } from "./post/post-card";
 import { PostComposer } from "./post/post-composer";
 import { FeedTabs } from "./feed-tabs";
+import { FeedFilterChips } from "./feed-filter-chips";
+import { CategoryPicker } from "./post/category-picker";
 import Link from "next/link";
 import { useZapStore, useHydrated, type UserPost } from "@/lib/store";
 import { useIsSignedIn } from "@/lib/require-sign-in";
 import { posts, getUser, getMarket } from "@/lib/fixtures";
+import { isDemoMode } from "@/lib/demo-mode";
 import {
   scorePost,
   makeSnapshot,
@@ -80,6 +83,11 @@ function serverPostToUserPost(p: ServerPost): UserPost {
     clicks: 0,
     throttled: false,
     boostEarlyStoppedAt: null,
+    // Preserve author metadata so PostCard can display real users that
+    // aren't in the fixture list.
+    authorName: p.author?.name,
+    authorUsername: p.author?.username,
+    authorAvatar: p.author?.avatar_url ?? null,
   };
 }
 
@@ -87,7 +95,11 @@ const PAGE_SIZE = 12;
 
 export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   const hydrated = useHydrated();
-  const { isSignedIn } = useIsSignedIn();
+  // Item #1 — wait until the viewer is resolved before deciding which
+  // composer surface to render. Otherwise SIGNED_IN users see a brief
+  // "Join Zap to post your take" flash while useViewer is still
+  // loading the profile row, which is the exact "split-state" bug.
+  const { isSignedIn, loading: authLoading } = useIsSignedIn();
   const userPosts = useZapStore(useShallow((s) => s.userPosts));
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
@@ -97,7 +109,12 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   const cooldownEndsAt = useZapStore((s) => s.cooldownEndsAt);
   const ensureDailyQuests = useZapStore((s) => s.ensureDailyQuests);
   const touchStreak = useZapStore((s) => s.touchStreak);
+  // Item #4 — local muted/blocked author ids. Any post whose userId
+  // matches is filtered out before ranking.
+  const blockedAuthorIds = useZapStore(useShallow((s) => s.blockedAuthorIds));
   const [tab, setTab] = useState("for-you");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Snapshot lives in a ref so updates to viewer affinity / counts do
   // NOT force a re-rank. The order changes only when:
@@ -212,6 +229,7 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   //      them. De-duplicated against userPosts by id so an optimistic add
   //      doesn't double-render once it lands in the DB.
   //   3. Fixture demo posts as a fallback (no env / no rows yet)
+  const demo = isDemoMode();
   const allItems = useMemo<FeedItem[]>(() => {
     const userIds = new Set(userPosts.map((p) => p.id));
     const serverItems = initialServerPosts
@@ -220,8 +238,14 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
     if (serverItems.length > 0) {
       return [...userPosts, ...serverItems];
     }
+    // Real backend mode: never fall back to fixture posts — show
+    // whatever the user has authored locally (optimistic) plus an empty
+    // state instead. Fixtures only mix in for demo / no-backend mode.
+    if (!demo) {
+      return [...userPosts];
+    }
     return [...userPosts, ...posts];
-  }, [userPosts, initialServerPosts]);
+  }, [userPosts, initialServerPosts, demo]);
 
   // Persist the original allItems used for the active snapshot so
   // realtime additions can be detected.
@@ -230,11 +254,17 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
   useEffect(() => {
     if (!hydrated) return;
     let t = setTimeout(() => {
-      const snap = buildSnapshot(allItems);
-      snapshotIdsRef.current = new Set(snap.items.map((p) => (p as any).id));
-      setSnapshot(snap);
-      setPendingNewPosts([]);
-      setPaintLoading(false);
+      try {
+        const snap = buildSnapshot(allItems);
+        snapshotIdsRef.current = new Set(snap.items.map((p) => (p as any).id));
+        setSnapshot(snap);
+        setPendingNewPosts([]);
+      } catch {
+        // buildSnapshot shouldn't throw, but if it does don't leave the
+        // feed stuck in the skeleton state forever.
+      } finally {
+        setPaintLoading(false);
+      }
     }, STABLE_THRESHOLD_MS);
     return () => clearTimeout(t);
     // Intentionally exclude buildSnapshot / allItems so we don't reshuffle.
@@ -283,23 +313,40 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
 
   const filtered = useMemo<FeedItem[]>(() => {
     if (!snapshot) return [];
+    let items: FeedItem[];
     switch (tab) {
       case "predictions":
-        return snapshot.items.filter((p) => p.type === "prediction");
+        items = snapshot.items.filter((p) => p.type === "prediction");
+        break;
       case "markets":
-        return snapshot.items.filter(
+        items = snapshot.items.filter(
           (p) => p.type === "market" || p.type === "launch",
         );
+        break;
       case "following":
-        return snapshot.items.slice(0, 6);
+        items = snapshot.items.slice(0, 6);
+        break;
       default:
-        return snapshot.items;
+        items = snapshot.items;
     }
-  }, [tab, snapshot]);
+    if (categoryFilter) {
+      items = items.filter((p) => (p as any).category === categoryFilter);
+    }
+    // Item #4 — drop posts whose author the viewer has blocked.
+    if (blockedAuthorIds.length > 0) {
+      const blocked = new Set(blockedAuthorIds);
+      items = items.filter((p) => !blocked.has((p as any).userId));
+    }
+    return items;
+  }, [tab, snapshot, categoryFilter, blockedAuthorIds]);
 
   return (
     <div className="flex flex-col gap-4">
-      {isSignedIn ? (
+      {authLoading ? (
+        // Neutral placeholder while we resolve whether the viewer is
+        // signed in — prevents the Topbar/Container split-state flash.
+        <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] h-[120px]" />
+      ) : isSignedIn ? (
         <PostComposer />
       ) : (
         <div className="rounded-[14px] border border-[#2A2F3D] bg-gradient-to-br from-[#1A1D26] to-[#14161D] p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
@@ -328,6 +375,23 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
         </div>
       )}
       <FeedTabs value={tab} onChange={setTab} />
+
+      <FeedFilterChips
+        value={categoryFilter}
+        onChange={setCategoryFilter}
+        onOpenPicker={() => setPickerOpen(true)}
+      />
+
+      {/* Category picker bottom-sheet (opens from "More" chip) */}
+      <CategoryPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        value={categoryFilter as any}
+        onChange={(cat) => {
+          setCategoryFilter(cat);
+          setPickerOpen(false);
+        }}
+      />
 
       <AnimatePresence>
         {pendingNewPosts.length > 0 && (

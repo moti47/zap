@@ -21,7 +21,9 @@ import {
   type Market,
   commentsForMarket,
 } from "@/lib/fixtures";
-import { timeAgo, cn, formatLargeNumber } from "@/lib/utils";
+import { cn, formatLargeNumber } from "@/lib/utils";
+import { TimeAgo } from "../ui/time-ago";
+import { isDemoMode } from "@/lib/demo-mode";
 
 interface MarketTabsProps {
   market: Market;
@@ -38,12 +40,20 @@ export function MarketTabs({ market }: MarketTabsProps) {
   const addComment = useZapStore((s) => s.addComment);
   const toggleCommentLike = useZapStore((s) => s.toggleCommentLike);
 
+  const demo = isDemoMode();
   const tradesForMarket = useMemo(() => {
     const matched = allTrades.filter((t) => t.marketId === market.id);
-    return matched.length > 0 ? matched : allTrades.slice(0, 14);
-  }, [allTrades, market.id]);
+    // In real mode, never pad with unrelated trades.
+    if (matched.length > 0) return matched;
+    return demo ? allTrades.slice(0, 14) : [];
+  }, [allTrades, market.id, demo]);
 
-  const seededComments = useMemo(() => commentsForMarket(market.id), [market.id]);
+  // Fixture comments per-market are decorative; only render in demo mode
+  // so real users see only real comments authored against the market.
+  const seededComments = useMemo(
+    () => (demo ? commentsForMarket(market.id) : []),
+    [market.id, demo],
+  );
   const related = useMemo(() => relatedMarkets(market.id, 4), [market.id]);
 
   const allComments = useMemo(() => {
@@ -138,9 +148,10 @@ export function MarketTabs({ market }: MarketTabsProps) {
                     @ {t.price}
                     <ZapMark />
                   </span>
-                  <span className="ml-auto font-mono text-[11px] text-[#5A6175]">
-                    {timeAgo(t.timestamp)}
-                  </span>
+                  <TimeAgo
+                    iso={t.timestamp}
+                    className="ml-auto font-mono text-[11px] text-[#5A6175]"
+                  />
                 </motion.div>
               );
             })}
@@ -237,7 +248,8 @@ export function MarketTabs({ market }: MarketTabsProps) {
                       )}
                     </div>
                     <div className="text-[11px] font-mono text-[#5A6175]">
-                      @{u.username} · {timeAgo(c.createdAt)}
+                      @{u.username} ·{" "}
+                      <TimeAgo iso={c.createdAt} />
                     </div>
                   </div>
                 </div>

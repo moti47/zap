@@ -2,6 +2,7 @@ import { NotificationsList } from "@/components/notifications-list";
 import { listMyNotifications } from "@/lib/db/notifications";
 import { getCurrentProfile } from "@/lib/db/profiles";
 import { notifications as mockNotifications } from "@/lib/fixtures";
+import { isDemoMode } from "@/lib/demo-mode";
 import type {
   NotificationWithPayload,
   NotificationKind,
@@ -38,8 +39,10 @@ export default async function NotificationsPage() {
   } catch {
     profile = null;
   }
-  if (!profile || items.length === 0) {
-    items = items.length ? items : fallbackFromMocks();
+  // Real users get real notifications, including an empty list. Mock
+  // fallback is only for demo mode.
+  if (items.length === 0 && isDemoMode()) {
+    items = fallbackFromMocks();
   }
   return (
     <NotificationsList

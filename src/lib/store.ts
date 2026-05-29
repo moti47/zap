@@ -87,6 +87,11 @@ export interface UserPost {
   shares: number;
   views: number;
   isMine?: boolean;
+  // Author metadata for posts that came from Supabase and whose author
+  // is not in the local fixture list.
+  authorName?: string;
+  authorUsername?: string;
+  authorAvatar?: string | null;
   // Phase 6 — exposure / boost / throttle
   boostZaps?: number;
   boostUntil?: string | null;
@@ -114,6 +119,10 @@ interface ZapState {
   // Social
   followingUserIds: string[];
   subscribedUserIds: string[];
+  // Item #4 — local mute/block list. Posts from these author ids are
+  // filtered out of the visible feed in the prototype layer; the
+  // Supabase mirror lives in `profiles.blocklist` (jsonb).
+  blockedAuthorIds: string[];
 
   // Positions
   positions: Position[];
@@ -182,6 +191,7 @@ interface ZapState {
   sellPosition: (marketId: string, side: "YES" | "NO", shares: number) => void;
   toggleFollow: (userId: string) => void;
   toggleSubscribe: (userId: string) => void;
+  toggleBlockAuthor: (userId: string) => void;
   toggleLike: (postId: string) => void;
   toggleCommentLike: (commentId: string) => void;
   toggleBookmarkPost: (postId: string) => void;
@@ -195,6 +205,13 @@ interface ZapState {
     boostZaps?: number;
     boostDurationH?: 1 | 4 | 24;
   }) => UserPost;
+  /**
+   * Swap the id of an optimistically-added post for the real DB UUID
+   * once the server insert has landed. Lets `feed-stream.tsx` dedup
+   * the local + server copies on the next snapshot pass instead of
+   * rendering both.
+   */
+  replaceLocalPostId: (tempId: string, realId: string) => void;
   recordImpression: (postId: string) => void;
   recordClick: (postId: string) => void;
   bumpAffinity: (
@@ -260,6 +277,7 @@ export const useZapStore = create<ZapState>()(
       profileOverride: {},
       followingUserIds: [],
       subscribedUserIds: [],
+      blockedAuthorIds: [],
       positions: [],
       likedPostIds: [],
       likedCommentIds: [],
@@ -438,6 +456,19 @@ export const useZapStore = create<ZapState>()(
         });
       },
 
+      // Item #4 — toggle the local blocklist. Posts authored by ids in
+      // this list are filtered out of the feed snapshot (see
+      // feed-stream.tsx). Re-running the action unblocks.
+      toggleBlockAuthor: (userId) => {
+        const state = get();
+        const blocked = state.blockedAuthorIds.includes(userId);
+        set({
+          blockedAuthorIds: blocked
+            ? state.blockedAuthorIds.filter((id) => id !== userId)
+            : [...state.blockedAuthorIds, userId],
+        });
+      },
+
       toggleLike: (postId) => {
         const state = get();
         const wasLiked = state.likedPostIds.includes(postId);
@@ -609,6 +640,15 @@ export const useZapStore = create<ZapState>()(
         if (draft.images?.length) get().bumpQuest("create_post_image");
         if (draft.marketId) get().bumpQuest("attach_market");
         return post;
+      },
+
+      replaceLocalPostId: (tempId, realId) => {
+        if (!tempId || !realId || tempId === realId) return;
+        set((s) => ({
+          userPosts: s.userPosts.map((p) =>
+            p.id === tempId ? { ...p, id: realId } : p,
+          ),
+        }));
       },
 
       recordImpression: (postId) => {

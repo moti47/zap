@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -21,6 +21,17 @@ import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatLargeNumber } from "@/lib/utils";
 import type { Market } from "@/lib/fixtures";
+import { executeTradeAction } from "@/app/market/[id]/trade-actions";
+import { useViewer, bumpViewerZaps } from "@/lib/use-viewer";
+
+/**
+ * UUID-shaped market ids come from Supabase; non-UUID ids (e.g.
+ * `m-trump-2024`) come from the fixtures. Only the former can be sent
+ * to the atomic trade RPC — the latter stays on the local Zustand
+ * prototype so the demo doesn't break when there's no backend.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface TradePanelProps {
   market: Market;
@@ -34,7 +45,16 @@ type Side = "YES" | "NO";
 const QUICK_CHIPS = [10, 50, 100, 500] as const;
 
 export function TradePanel({ market, className }: TradePanelProps) {
-  const points = useZapStore((s) => s.points);
+  // Round-2 fix — the split-state bug was here. `points` from Zustand
+  // initializes to 50 for the prototype demo; `viewer.zaps` is the
+  // authoritative DB balance. When a signed-in user with a real balance
+  // hits BUY, the gate was rejecting against the Zustand 50 even though
+  // the topbar pill showed (and Supabase had) the real number. Prefer
+  // viewer.zaps when present; fall back to Zustand for fixture-only
+  // demo mode.
+  const { viewer } = useViewer();
+  const storePoints = useZapStore((s) => s.points);
+  const points = viewer ? viewer.zaps : storePoints;
   const positions = useZapStore(useShallow((s) => s.positions));
   const buyShares = useZapStore((s) => s.buyShares);
   const sellShares = useZapStore((s) => s.sellShares);
@@ -49,6 +69,7 @@ export function TradePanel({ market, className }: TradePanelProps) {
   const [side, setSide] = useState<Side>("YES");
   const [amount, setAmount] = useState(50);
   const [proOpen, setProOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   const yesPrice = live?.yes ?? market.currentYesPrice;
   const noPrice = live?.no ?? market.currentNoPrice;
@@ -99,7 +120,11 @@ export function TradePanel({ market, className }: TradePanelProps) {
 
   const sellDisabled = !hasAny;
 
+  const isServerMarket = UUID_RE.test(market.id);
+
   const handleAction = () => {
+    if (isPending) return;
+    // Cheap-fail validations happen before optimistic state changes.
     if (mode === "BUY") {
       if (clampedAmount > points) {
         toast.error("Not enough Zaps", {
@@ -111,21 +136,98 @@ export function TradePanel({ market, className }: TradePanelProps) {
         toast.error("Amount too small");
         return;
       }
-      buyShares(market.id, side, tradeShares, price);
-      toast.success(`Bought ${tradeShares} ${side} @ ${price}¢`, {
-        description: `Staked ${clampedAmount}⚡ · Potential profit +${potentialProfit}⚡`,
-      });
     } else {
       if (!myPos || tradeShares > myPos.shares) {
         toast.error("Not enough shares to sell");
         return;
       }
-      sellShares(market.id, side, tradeShares, price);
-      toast.success(`Sold ${tradeShares} ${side} @ ${price}¢`, {
-        description: `+${tradeCost}⚡ to balance`,
-      });
     }
-    setAmount(mode === "BUY" ? 50 : Math.max(1, Math.floor(sliderMax / 2)));
+
+    // Local-only path: fixture markets keep the prototype Zustand wiring.
+    if (!isServerMarket) {
+      if (mode === "BUY") {
+        buyShares(market.id, side, tradeShares, price);
+        toast.success(`Bought ${tradeShares} ${side} @ ${price}% Probability`, {
+          description: `Staked ${clampedAmount}⚡ · Potential profit +${potentialProfit}⚡`,
+        });
+      } else {
+        sellShares(market.id, side, tradeShares, price);
+        toast.success(`Sold ${tradeShares} ${side} @ ${price}% Probability`, {
+          description: `+${tradeCost}⚡ to balance`,
+        });
+      }
+      setAmount(mode === "BUY" ? 50 : Math.max(1, Math.floor(sliderMax / 2)));
+      return;
+    }
+
+    // Server path: optimistic Zustand update, then atomic RPC. On
+    // failure we roll back the local state so the UI stays truthful.
+    const snapshotPoints = points;
+    if (mode === "BUY") {
+      buyShares(market.id, side, tradeShares, price);
+    } else {
+      sellShares(market.id, side, tradeShares, price);
+    }
+
+    // Round-3 Item #4 — push the same delta through the viewer bus so
+    // the Topbar BalancePill (and every other useViewer consumer)
+    // reflects the new total instantly. The Postgres realtime UPDATE
+    // that follows will overwrite with the authoritative value.
+    const optimisticDelta =
+      mode === "BUY" ? -clampedAmount : +tradeCost;
+    bumpViewerZaps(optimisticDelta, mode === "BUY" ? "trade_buy" : "trade_sell");
+
+    startTransition(async () => {
+      const result = await executeTradeAction({
+        marketId: market.id,
+        side: side === "YES" ? "yes" : "no",
+        action: mode === "BUY" ? "buy" : "sell",
+        shares: tradeShares,
+        price,
+      });
+      if (!result.ok) {
+        // Rollback. The store mirrors the action that just ran, so we
+        // invert it: sell what we just bought, or buy back what we just
+        // sold, at the same price. Balance + position end up where they
+        // started.
+        if (mode === "BUY") {
+          sellShares(market.id, side, tradeShares, price);
+        } else {
+          buyShares(market.id, side, tradeShares, price);
+        }
+        // And undo the optimistic viewer-bus bump.
+        bumpViewerZaps(-optimisticDelta, "trade_rollback");
+        // Defensive: if the rollback didn't fully restore the balance
+        // (e.g. position was modified concurrently), surface a hint.
+        if (useZapStore.getState().points !== snapshotPoints) {
+          toast.error(result.error || "Trade failed", {
+            description: "Refresh to resync your balance.",
+          });
+        } else {
+          toast.error(result.error || "Trade failed");
+        }
+        return;
+      }
+      // Reconcile the viewer bus to the server's authoritative number.
+      // We applied `optimisticDelta` already; the realtime UPDATE may
+      // arrive a tick later, so push the residual now and clear any
+      // drift. If the realtime update lands first, this becomes a 0.
+      if (viewer) {
+        const desired = result.result.new_balance;
+        const residual = desired - viewer.zaps - optimisticDelta;
+        if (residual !== 0) bumpViewerZaps(residual, "trade_reconcile");
+      }
+      if (mode === "BUY") {
+        toast.success(`Bought ${tradeShares} ${side} @ ${price}% Probability`, {
+          description: `Balance ${result.result.new_balance.toLocaleString()}⚡`,
+        });
+      } else {
+        toast.success(`Sold ${tradeShares} ${side} @ ${price}% Probability`, {
+          description: `Balance ${result.result.new_balance.toLocaleString()}⚡`,
+        });
+      }
+      setAmount(mode === "BUY" ? 50 : Math.max(1, Math.floor(sliderMax / 2)));
+    });
   };
 
   const handleModeChange = (m: Mode) => {
@@ -526,7 +628,9 @@ export function TradePanel({ market, className }: TradePanelProps) {
             variant={side === "YES" ? "yes" : "no"}
             size="lg"
             className="w-full text-base"
-            disabled={tradeShares <= 0 || (mode === "SELL" && !myPos)}
+            disabled={
+              tradeShares <= 0 || (mode === "SELL" && !myPos) || isPending
+            }
           >
             <ZapIcon className="h-4 w-4" />
             {mode === "BUY"

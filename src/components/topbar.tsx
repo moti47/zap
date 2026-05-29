@@ -11,24 +11,15 @@ import {
   User as UserIcon,
   Pencil,
   LogOut,
-  Settings,
+  Wallet,
   X,
 } from "lucide-react";
-import { useZapStore, useHydrated } from "@/lib/store";
 import { useViewer } from "@/lib/use-viewer";
 import { UserAvatar } from "./user-avatar";
-import { ZapLogo, ZapMark } from "./zap-logo";
+import { ZapLogo } from "./zap-logo";
+import { BalancePill } from "./balance-pill";
 import { NotificationBell } from "./notification-bell";
-import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger,
-} from "./ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +28,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown";
-import { PostComposer } from "./post/post-composer";
 import { GlobalSearch } from "./global-search";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +36,11 @@ interface NavItem {
   label: string;
   match: (p: string) => boolean;
   adminOnly?: boolean;
+  /** Round-2 — items that require a signed-in user. Hidden when
+   *  `viewer` is null so anon visitors don't see Quests / Saved /
+   *  Portfolio (middleware would bounce them anyway, but the nav
+   *  shouldn't tease an account-only surface). */
+  authOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -56,25 +51,24 @@ const navItems: NavItem[] = [
     match: (p: string) => p === "/markets" || p.startsWith("/market"),
   },
   { href: "/leaderboard", label: "Leaderboard", match: (p: string) => p.startsWith("/leaderboard") },
-  { href: "/saved", label: "Saved", match: (p: string) => p.startsWith("/saved") },
-  { href: "/quests", label: "Quests", match: (p: string) => p.startsWith("/quests") },
-  { href: "/propose", label: "Propose", match: (p: string) => p.startsWith("/propose") },
+  { href: "/saved", label: "Saved", match: (p: string) => p.startsWith("/saved"), authOnly: true },
+  { href: "/quests", label: "Quests", match: (p: string) => p.startsWith("/quests"), authOnly: true },
+  { href: "/portfolio", label: "Portfolio", match: (p: string) => p.startsWith("/portfolio"), authOnly: true },
+  // "Propose" was removed from the main navigation — regular users no
+  // longer surface a path to author markets. Admins still reach the
+  // creation flow via `/admin`.
   { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin"), adminOnly: true },
 ];
 
 export function Topbar() {
-  const points = useZapStore((s) => s.points);
-  const hydrated = useHydrated();
   const pathname = usePathname();
   const { viewer } = useViewer();
-  const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Show the persisted Zaps balance from the profiles row when the
-  // user is signed-in via Supabase. Falls through to the local Zustand
-  // balance (prototype demo path) otherwise.
-  const displayPoints = viewer ? viewer.zaps : points;
+  // Balance now lives inside <BalancePill /> — it reads viewer.zaps
+  // directly from useViewer (which is realtime-synced to Supabase
+  // postgres_changes on the profiles row).
   const displayName = viewer?.name ?? "You";
   const displayUsername = viewer?.username ?? "you";
   const displayInitial = (displayName || "Y").charAt(0).toUpperCase();
@@ -113,7 +107,9 @@ export function Topbar() {
 
           {/* Center nav (desktop) */}
           <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-            {navItems.filter((item) => !item.adminOnly || viewer?.is_admin).map((item) => {
+            {navItems
+              .filter((item) => (!item.adminOnly || viewer?.is_admin) && (!item.authOnly || !!viewer))
+              .map((item) => {
               const active = item.match(pathname);
               return (
                 <Link
@@ -175,16 +171,8 @@ export function Topbar() {
             {/* Signed-in branch — everything below. */}
             {viewer && (
             <>
-            {/* Balance pill — md+ */}
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-md border border-[#2A2F3D] bg-[#14161D]">
-              <span className="text-[10px] uppercase tracking-widest text-[#5A6175] font-mono">
-                Balance
-              </span>
-              <span className="text-sm font-bold num">
-                {hydrated ? displayPoints.toLocaleString() : "50"}
-              </span>
-              <ZapMark />
-            </div>
+            {/* Realtime-synced Zaps balance pill (desktop only). */}
+            <BalancePill variant="default" />
 
             <Button
               variant="ghost"
@@ -197,39 +185,42 @@ export function Topbar() {
 
             <NotificationBell />
 
-            <Dialog open={composerOpen} onOpenChange={setComposerOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="hidden sm:inline-flex"
-                >
-                  <Plus className="h-4 w-4" /> Compose
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl p-0">
-                <DialogHeader className="p-5 pb-0">
-                  <DialogTitle>Write a post</DialogTitle>
-                  <DialogDescription className="sr-only">
-                    Compose a new post with text, image, category, and optional market.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="p-5 pt-3">
-                  <PostComposer
-                    onPublish={() => setComposerOpen(false)}
-                    autoFocus
-                    variant="modal"
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
+            {/* Item #3 — Compose no longer opens a modal. It smooth-
+                scrolls to the top of the feed (where the in-feed
+                composer lives) and dispatches `zap:focus-composer` so
+                the editor takes focus. If the viewer isn't on a route
+                that mounts the composer (e.g. /portfolio), we route
+                them to "/" first; the composer's mount effect picks up
+                the event on the next tick. */}
+            <Button
+              size="sm"
+              variant="default"
+              className="hidden sm:inline-flex"
+              onClick={() => {
+                if (pathname !== "/") {
+                  window.location.href = "/#compose";
+                  return;
+                }
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                window.dispatchEvent(new CustomEvent("zap:focus-composer"));
+              }}
+            >
+              <Plus className="h-4 w-4" /> Compose
+            </Button>
 
-            {/* Mobile compose icon */}
+            {/* Mobile compose icon — same scroll-to-top behavior. */}
             <Button
               variant="default"
               size="icon"
               className="sm:hidden"
-              onClick={() => setComposerOpen(true)}
+              onClick={() => {
+                if (pathname !== "/") {
+                  window.location.href = "/#compose";
+                  return;
+                }
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                window.dispatchEvent(new CustomEvent("zap:focus-composer"));
+              }}
               aria-label="Compose"
             >
               <Plus className="h-4 w-4" />
@@ -283,9 +274,9 @@ export function Topbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/profile/edit" className="cursor-pointer">
-                    <Settings className="h-4 w-4 mr-2 text-[#8B92A8]" />
-                    Settings
+                  <Link href="/portfolio" className="cursor-pointer">
+                    <Wallet className="h-4 w-4 mr-2 text-[#8B92A8]" />
+                    My Portfolio
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -342,7 +333,9 @@ export function Topbar() {
               </button>
             </div>
             <nav className="flex-1 p-3 flex flex-col gap-0.5">
-              {navItems.filter((item) => !item.adminOnly || viewer?.is_admin).map((item) => {
+              {navItems
+              .filter((item) => (!item.adminOnly || viewer?.is_admin) && (!item.authOnly || !!viewer))
+              .map((item) => {
                 const active = item.match(pathname);
                 return (
                   <Link
@@ -399,17 +392,7 @@ export function Topbar() {
             </nav>
             {viewer && (
               <div className="p-4 border-t border-[#2A2F3D]">
-                <div className="rounded-md border border-[#FFB800]/20 bg-gradient-to-br from-[#1F1A0E] to-[#1A1D26] p-3">
-                  <div className="text-[10px] uppercase tracking-widest text-[#8B92A8] font-mono">
-                    Your Balance
-                  </div>
-                  <div className="mt-1 flex items-baseline gap-1">
-                    <span className="text-xl font-bold tracking-tight num text-white">
-                      {hydrated ? displayPoints.toLocaleString() : "50"}
-                    </span>
-                    <ZapMark />
-                  </div>
-                </div>
+                <BalancePill variant="stacked" />
               </div>
             )}
           </motion.aside>

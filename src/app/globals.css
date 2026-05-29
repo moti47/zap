@@ -127,3 +127,18 @@ body {
 
 /* Smooth scroll */
 html { scroll-behavior: smooth; }
+
+/* Hashtag links inside post rich-body */
+.rich-body a.hashtag-link {
+  color: #FFE600;
+  font-family: ui-monospace, monospace;
+  font-size: 0.875em;
+  text-decoration: none;
+  border-radius: 3px;
+  padding: 0 2px;
+  transition: background 0.15s;
+}
+.rich-body a.hashtag-link:hover {
+  background: rgba(255, 230, 0, 0.12);
+  text-decoration: underline;
+}

@@ -65,7 +65,7 @@ export function SellSheet({ open, onOpenChange, marketId, initialSide }: SellShe
   const confirm = () => {
     if (!canSell || !pos) return;
     sellPosition(market.id, side, qty);
-    toast.success(`Sold ${qty} ${side} @ ${price}¢`, {
+    toast.success(`Sold ${qty} ${side} @ ${price}% Probability`, {
       description: `+${proceeds}⚡ to balance`,
     });
     onOpenChange(false);

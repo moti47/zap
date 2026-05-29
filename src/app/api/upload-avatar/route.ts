@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { uploadAvatar } from "@/lib/db/storage";
 import { requireUser, NotSignedInError } from "@/lib/auth";
+import { guardUpload, AVATAR_GUARD } from "@/lib/upload-guard";
+import { rateLimit, sweepIfStale } from "@/lib/rate-limit";
+
+export const runtime = "nodejs";
 
 /**
  * POST /api/upload-avatar — multipart form, field `file`.
@@ -9,25 +13,17 @@ import { requireUser, NotSignedInError } from "@/lib/auth";
  * Validates type + size (≤4MB). Falls back to a data URL when Supabase env
  * vars aren't set so the prototype demo still works without a backend.
  */
-export const runtime = "nodejs";
-
-const MAX_BYTES = 4 * 1024 * 1024;
-const ALLOWED = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-  "image/gif",
-]);
-
 export async function POST(req: Request) {
+  sweepIfStale();
   try {
     const haveEnv =
       !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
       !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    let userId = "anon";
     if (haveEnv) {
       try {
-        await requireUser();
+        const user = await requireUser();
+        userId = user.id;
       } catch (err) {
         if (err instanceof NotSignedInError) {
           return NextResponse.json({ error: err.message }, { status: 401 });
@@ -35,28 +31,26 @@ export async function POST(req: Request) {
         throw err;
       }
     }
+    const rl = rateLimit(`upload-avatar:${userId}`, { capacity: 5, refillPerSec: 0.2 });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Too many uploads — slow down" },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+      );
+    }
+
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json(
-        { error: "File too large — max 4MB" },
-        { status: 400 },
-      );
-    }
-    if (file.type && !ALLOWED.has(file.type.toLowerCase())) {
-      return NextResponse.json(
-        { error: "Unsupported image format" },
-        { status: 400 },
-      );
+    const guard = guardUpload(file, AVATAR_GUARD);
+    if (!guard.ok) {
+      return NextResponse.json({ error: guard.error }, { status: guard.status });
     }
     if (!haveEnv) {
       const buf = Buffer.from(await file.arrayBuffer());
-      const url = `data:${file.type || "image/png"};base64,${buf.toString(
-        "base64",
-      )}`;
+      const url = `data:${file.type || "image/png"};base64,${buf.toString("base64")}`;
       return NextResponse.json({ url, mode: "fallback" });
     }
     const { url } = await uploadAvatar(file);

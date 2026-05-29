@@ -1,119 +1,46 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Side } from "@/lib/supabase/types";
+import type { Side, TradeAction } from "@/lib/supabase/types";
+import { NotSignedInError } from "@/lib/auth";
 
 /**
- * Atomically: deduct Zaps, write trade row, upsert position, bump market
- * price + volume. RLS lets the user write only their own positions row;
- * the markets table is service-role write-only, so we update yes/no price
- * via a Postgres function (added in a later migration) — for Phase 1 we
- * still update through the user client for prototyping.
+ * Atomic trade execution via the `execute_trade` SQL function added in
+ * migration 0008. One transaction handles: balance check (with
+ * `for update` row lock), Zaps debit/credit, position upsert, trade
+ * ledger insert, market price + volume bump. Concurrent trades cannot
+ * over-spend the user's balance.
+ *
+ * Returns the new balance + new position size + new avg price.
  */
+export interface TradeRpcResult {
+  new_balance: number;
+  new_shares: number;
+  new_avg_price: number;
+}
+
 export async function executeTrade(input: {
   marketId: string;
   side: Side;
-  action: "buy" | "sell";
+  action: TradeAction;
   shares: number;
   price: number;
-}) {
+}): Promise<TradeRpcResult> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-
-  const cost = Math.round((input.shares * input.price) / 100);
-
-  if (input.action === "buy") {
-    // Check balance.
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("zaps, total_predictions")
-      .eq("id", user.id)
-      .single();
-    if (!profile || profile.zaps < cost) {
-      throw new Error("Not enough Zaps");
-    }
-    await supabase
-      .from("profiles")
-      .update({
-        zaps: profile.zaps - cost,
-        total_predictions: profile.total_predictions + 1,
-      })
-      .eq("id", user.id);
-
-    // Upsert position.
-    const { data: existing } = await supabase
-      .from("positions")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("market_id", input.marketId)
-      .eq("side", input.side)
-      .maybeSingle();
-
-    if (existing) {
-      const totalShares = existing.shares + input.shares;
-      const newAvg =
-        (existing.avg_price * existing.shares + input.price * input.shares) /
-        totalShares;
-      await supabase
-        .from("positions")
-        .update({ shares: totalShares, avg_price: newAvg })
-        .eq("id", existing.id);
-    } else {
-      await supabase.from("positions").insert({
-        user_id: user.id,
-        market_id: input.marketId,
-        side: input.side,
-        shares: input.shares,
-        avg_price: input.price,
-      });
-    }
-  } else {
-    // Sell.
-    const { data: existing } = await supabase
-      .from("positions")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("market_id", input.marketId)
-      .eq("side", input.side)
-      .maybeSingle();
-    if (!existing || existing.shares < input.shares) {
-      throw new Error("Not enough shares to sell");
-    }
-    const proceeds = Math.round((input.shares * input.price) / 100);
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("zaps")
-      .eq("id", user.id)
-      .single();
-    await supabase
-      .from("profiles")
-      .update({ zaps: (profile?.zaps ?? 0) + proceeds })
-      .eq("id", user.id);
-
-    const remaining = existing.shares - input.shares;
-    if (remaining === 0) {
-      await supabase.from("positions").delete().eq("id", existing.id);
-    } else {
-      await supabase
-        .from("positions")
-        .update({ shares: remaining })
-        .eq("id", existing.id);
-    }
-  }
-
-  // Record the trade. RLS lets the user insert their own row.
-  await supabase.from("trades").insert({
-    user_id: user.id,
-    market_id: input.marketId,
-    side: input.side,
-    action: input.action,
-    shares: input.shares,
-    price: input.price,
+  const { data, error } = await supabase.rpc("execute_trade", {
+    p_market_id: input.marketId,
+    p_side: input.side,
+    p_action: input.action,
+    p_shares: Math.floor(input.shares),
+    p_price: input.price,
   });
-
-  return { ok: true };
+  if (error) {
+    if (error.code === "42501") throw new NotSignedInError();
+    throw error;
+  }
+  // `rpc` with a `returns table` returns an array; take the first row.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("Trade RPC returned no row");
+  return row as TradeRpcResult;
 }
 
 export async function getMyPositions() {

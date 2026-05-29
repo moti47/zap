@@ -29,7 +29,7 @@ export function DemoSeedButton() {
       const delta = Math.floor(Math.random() * 3) + 1;
       tickPrice(t.marketId, t.side, delta);
       const user = users.find((u) => u.id === t.userId);
-      toast(`${user?.name ?? "Anon"} ${t.side === "YES" ? "bought" : "sold"} ${t.shares} ${t.side} @ ${t.price}¢`, {
+      toast(`${user?.name ?? "Anon"} ${t.side === "YES" ? "bought" : "sold"} ${t.shares} ${t.side} @ ${t.price}% Probability`, {
         description: `Live on Zap`,
       });
     }

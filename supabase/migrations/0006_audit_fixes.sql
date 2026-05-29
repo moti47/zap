@@ -61,8 +61,13 @@ $$;
 -- = '<uuid>';`):
 --     select public.bootstrap_admin('<uuid>');
 --
--- Also grants a generous starting balance so the admin can boost
--- markets, seed liquidity, etc.
+-- The function flips `is_admin` only. We DO NOT mint a starting
+-- balance here — every account, including admin, starts from whatever
+-- the canonical onboarding flow set (currently 50 Zaps) and earns
+-- the rest via quests, streaks, and trading. The previous
+-- `zaps = greatest(zaps, 9999999)` line was a debug shortcut that
+-- desynced the on-screen BalancePill from the real ledger; it is
+-- intentionally removed.
 
 create or replace function public.bootstrap_admin(p_user_id uuid)
 returns void
@@ -74,7 +79,6 @@ begin
   end if;
   update public.profiles
      set is_admin = true,
-         zaps = greatest(zaps, 9999999),
          updated_at = now()
    where id = p_user_id;
 end $$;

@@ -346,18 +346,18 @@ export function getMarket(id: string): Market | undefined {
 
 const POST_BODIES: Array<{ type: Post["type"]; text: string; cat?: Category }> = [
   { type: "prediction", text: "I think the market is sleeping on this one. Loading up." },
-  { type: "prediction", text: "ETH at 28¢ for clearing 5K by July is a steal IF you believe in the ETF flow narrative. I don't." },
+  { type: "prediction", text: "ETH at 28% probability for clearing 5K by July is a steal IF you believe in the ETF flow narrative. I don't." },
   { type: "general", text: "Lakers without LeBron are structurally different. Play-in is in play.", cat: "sports" },
   { type: "general", text: "Next 18 months of agentic AI: 80% disappointing demos, 20% useful internal tooling.", cat: "tech" },
   { type: "prediction", text: "CPI 3.1% headline, 3.4% core. Shelter is rolling, used cars flat. July cut on the table." },
   { type: "general", text: "\"Polling tightening\" is the most overused phrase in cable news.", cat: "politics" },
   { type: "launch", text: "New market just dropped — and the price is moving fast." },
-  { type: "prediction", text: "BTC-200K at 38¢ feels low given the setup. Implied probability mispriced." },
+  { type: "prediction", text: "BTC-200K at 38% probability feels low given the setup. Implied probability mispriced." },
   { type: "general", text: "Reading 12 newsletters. Three said the same Swift tour rumor. Cluster = signal.", cat: "entertainment" },
   { type: "market", text: "Quietly the most interesting market on Zap right now. Clean resolution source." },
   { type: "prediction", text: "Lakers seeding markets: third time's the charm." },
   { type: "general", text: "BTC dominance holding above 56% even during alt season. ETF effect.", cat: "crypto" },
-  { type: "prediction", text: "Selling NYC mayor YES at 84¢. Locking in 22%." },
+  { type: "prediction", text: "Selling NYC mayor YES at 84% probability. Locking in 22%." },
   { type: "market", text: "Cleanest Fed-decision expression I've seen. No ambiguity on resolution." },
 ];
 

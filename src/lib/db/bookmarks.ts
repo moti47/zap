@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { PostWithRelations } from "@/lib/db/posts";
 import type { MarketWithCategory } from "@/lib/db/markets";
+import { NotSignedInError } from "@/lib/auth";
 
 export interface SavedBundle {
   posts: PostWithRelations[];
@@ -72,22 +73,12 @@ export async function listMyBookmarks(): Promise<SavedBundle> {
 
 export async function toggleMarketBookmark(marketId: string) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  const { data: existing } = await supabase
-    .from("bookmarks")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("market_id", marketId)
-    .maybeSingle();
-  if (existing) {
-    await supabase.from("bookmarks").delete().eq("id", existing.id);
-    return { bookmarked: false };
+  const { data, error } = await supabase.rpc("toggle_market_bookmark", {
+    p_market_id: marketId,
+  });
+  if (error) {
+    if (error.code === "42501") throw new NotSignedInError();
+    throw error;
   }
-  await supabase
-    .from("bookmarks")
-    .insert({ user_id: user.id, market_id: marketId });
-  return { bookmarked: true };
+  return { bookmarked: Boolean(data) };
 }

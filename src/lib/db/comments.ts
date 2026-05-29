@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { CommentRow } from "@/lib/supabase/types";
+import { NotSignedInError } from "@/lib/auth";
 
 export type CommentWithAuthor = CommentRow & {
   author: {
@@ -65,7 +66,7 @@ export async function createComment(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
   const { data, error } = await supabase
     .from("comments")
     .insert({
@@ -82,26 +83,12 @@ export async function createComment(input: {
 
 export async function toggleCommentLike(commentId: string) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  const { data: existing } = await supabase
-    .from("comment_likes")
-    .select("comment_id")
-    .eq("user_id", user.id)
-    .eq("comment_id", commentId)
-    .maybeSingle();
-  if (existing) {
-    await supabase
-      .from("comment_likes")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("comment_id", commentId);
-    return { liked: false };
+  const { data, error } = await supabase.rpc("toggle_comment_like", {
+    p_comment_id: commentId,
+  });
+  if (error) {
+    if (error.code === "42501") throw new NotSignedInError();
+    throw error;
   }
-  await supabase
-    .from("comment_likes")
-    .insert({ user_id: user.id, comment_id: commentId });
-  return { liked: true };
+  return { liked: Boolean(data) };
 }

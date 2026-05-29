@@ -1,14 +1,23 @@
 // Lean hand-rolled Database type. Replace with `supabase gen types typescript`
-// output once the project is provisioned. Field names mirror 0001_init.sql.
+// output once the project is provisioned. Field names mirror migrations
+// 0001 → 0008.
 
-export type CategorySlug =
+// The category list was widened in 0007_categories_expand.sql; new slugs
+// are added often (admin tooling can seed them), so we use a string
+// brand instead of the original closed union. Keep the well-known slugs
+// listed so editor autocomplete still helps for the common ones.
+export type WellKnownCategorySlug =
   | "politics"
   | "crypto"
   | "sports"
   | "tech"
   | "economy"
   | "entertainment"
-  | "general";
+  | "general"
+  | "ai"
+  | "stocks"
+  | "elections";
+export type CategorySlug = WellKnownCategorySlug | (string & {});
 
 export type Side = "yes" | "no";
 export type MarketStatus = "open" | "resolved" | "cancelled";
@@ -24,8 +33,13 @@ export interface ProfileRow {
   cover_gradient: string | null;
   /** Phase 11+ — uploaded 3:1 profile banner. Wins over cover_gradient when set. */
   banner_url: string | null;
-  /** Phase 11+ — 'user' | 'admin'. Only ADMIN_USER_ID may hold 'admin'. */
-  role: "user" | "admin";
+  /** Phase 11+ — role ladder. Only ADMIN_USER_ID may hold 'admin'. Item #6 added 'moderator'. */
+  role: "user" | "moderator" | "admin";
+  /**
+   * Phase 11+ — boolean source-of-truth for admin status. Pinned by
+   * the `enforce_admin_pin` trigger to the `app.admin_user_id` GUC.
+   */
+  is_admin: boolean;
   zaps: number;
   total_predictions: number;
   affinity: Record<string, number> | null;
@@ -38,6 +52,15 @@ export interface ProfileRow {
   recovery_history: string[];
   pending_recovery_for: string | null;
   created_at: string;
+  /** Phase 11+ — bumped by `profiles_set_updated_at_trg` on every update. */
+  updated_at: string;
+  /** Item #6 — admin-managed account status. Migration 0010. */
+  is_suspended?: boolean;
+  /** Item #9 — last UTC day the user's quests/streak advanced. Migration 0010. */
+  last_tracked_login?: string | null;
+  last_streak_day?: string | null;
+  /** Item #4 — server-side mirror of the per-user blocklist. */
+  blocklist?: string[];
 }
 
 export interface CategoryRow {
@@ -61,6 +84,8 @@ export interface MarketRow {
   status: MarketStatus;
   outcome: MarketOutcome;
   hero_image_url: string | null;
+  /** Phase 11+ — `admin`, `proposal_approved`, or `seed`. */
+  creation_source: "admin" | "proposal_approved" | "seed";
   created_at: string;
   created_by: string | null;
 }

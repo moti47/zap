@@ -306,7 +306,7 @@ export function ProposeMarketView({ initialProposals, categoryIdsBySlug }: Props
         </div>
 
         <Field
-          label={`Initial YES price · ${yesPrice}¢`}
+          label={`Initial YES probability · ${yesPrice}%`}
           hint="Where do you think YES should open? (NO is auto-priced)"
         >
           <div className="flex items-center gap-4">
@@ -320,11 +320,11 @@ export function ProposeMarketView({ initialProposals, categoryIdsBySlug }: Props
             />
             <div className="flex items-center gap-1">
               <span className="text-[14px] font-bold text-[#36D399] tabular-nums w-10 text-right">
-                YES {yesPrice}¢
+                YES {yesPrice}%
               </span>
               <span className="text-[#5A6175] text-[12px] mx-1">/</span>
               <span className="text-[14px] font-bold text-[#FF4757] tabular-nums w-10">
-                NO {100 - yesPrice}¢
+                NO {100 - yesPrice}%
               </span>
             </div>
           </div>
@@ -442,7 +442,7 @@ export function ProposeMarketView({ initialProposals, categoryIdsBySlug }: Props
                         <span style={{ color: meta.color }}>{meta.label}</span>
                         <span>·</span>
                         <span>
-                          opens {p.initial_yes_price}¢ YES
+                          opens {p.initial_yes_price}% YES
                         </span>
                         <span>·</span>
                         <span>

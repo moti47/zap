@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { PostRow } from "@/lib/supabase/types";
 import type { AffinityVector } from "@/lib/exposure";
+import { NotSignedInError } from "@/lib/auth";
 
 export type PostWithRelations = PostRow & {
   author: {
@@ -48,32 +49,25 @@ export async function listFeed(opts?: {
   if (opts?.categorySlug) q = q.eq("category.slug", opts.categorySlug);
   if (opts?.authorId) q = q.eq("author_id", opts.authorId);
 
-  const { data } = await q;
-  const posts = (data ?? []) as PostWithRelations[];
+  // Fire the posts query and the viewer-id lookup in parallel — the
+  // viewer-side hydration (likes, bookmarks, affinity) doesn't depend
+  // on the posts payload until both have returned.
+  const [postsRes, userRes] = await Promise.all([q, supabase.auth.getUser()]);
+  const posts = (postsRes.data ?? []) as PostWithRelations[];
+  const user = userRes.data.user;
 
-  // Hydrate liked_by_me / bookmarked_by_me for the current viewer.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Phase 6: personalize ranking with the viewer's category affinity vector.
-  if (user && posts.length) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("affinity")
-      .eq("id", user.id)
-      .maybeSingle();
-    const aff = ((profile?.affinity ?? {}) as AffinityVector) || {};
-    posts.sort((a, b) => {
-      const liftA = (aff[a.category.slug] ?? 0.3) * 0.1;
-      const liftB = (aff[b.category.slug] ?? 0.3) * 0.1;
-      return b.exposure_score + liftB - (a.exposure_score + liftA);
-    });
+  if (!user || posts.length === 0) {
+    return posts;
   }
 
-  if (user && posts.length) {
-    const ids = posts.map((p) => p.id);
-    const [{ data: likes }, { data: bookmarks }] = await Promise.all([
+  const ids = posts.map((p) => p.id);
+  const [{ data: profile }, { data: likes }, { data: bookmarks }] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("affinity")
+        .eq("id", user.id)
+        .maybeSingle(),
       supabase
         .from("post_likes")
         .select("post_id")
@@ -85,16 +79,22 @@ export async function listFeed(opts?: {
         .eq("user_id", user.id)
         .in("post_id", ids),
     ]);
-    const likedSet = new Set((likes ?? []).map((l) => l.post_id));
-    const bookmarkedSet = new Set(
-      (bookmarks ?? []).map((b) => b.post_id).filter(Boolean) as string[],
-    );
-    for (const p of posts) {
-      p.liked_by_me = likedSet.has(p.id);
-      p.bookmarked_by_me = bookmarkedSet.has(p.id);
-    }
-  }
 
+  const aff = ((profile?.affinity ?? {}) as AffinityVector) || {};
+  posts.sort((a, b) => {
+    const liftA = (aff[a.category.slug] ?? 0.3) * 0.1;
+    const liftB = (aff[b.category.slug] ?? 0.3) * 0.1;
+    return b.exposure_score + liftB - (a.exposure_score + liftA);
+  });
+
+  const likedSet = new Set((likes ?? []).map((l) => l.post_id));
+  const bookmarkedSet = new Set(
+    (bookmarks ?? []).map((b) => b.post_id).filter(Boolean) as string[],
+  );
+  for (const p of posts) {
+    p.liked_by_me = likedSet.has(p.id);
+    p.bookmarked_by_me = bookmarkedSet.has(p.id);
+  }
   return posts;
 }
 
@@ -127,7 +127,7 @@ export async function createPost(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
   const { data, error } = await supabase
     .from("posts")
     .insert({
@@ -147,52 +147,36 @@ export async function createPost(input: {
 
 export async function deletePost(id: string) {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new NotSignedInError();
   const { error } = await supabase.from("posts").delete().eq("id", id);
   if (error) throw error;
 }
 
 export async function togglePostLike(postId: string) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  const { data: existing } = await supabase
-    .from("post_likes")
-    .select("post_id")
-    .eq("user_id", user.id)
-    .eq("post_id", postId)
-    .maybeSingle();
-  if (existing) {
-    await supabase
-      .from("post_likes")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("post_id", postId);
-    return { liked: false };
+  // Atomic RPC — single statement under the hood, no SELECT-then-INSERT
+  // race. Falls back gracefully if the function isn't deployed.
+  const { data, error } = await supabase.rpc("toggle_post_like", {
+    p_post_id: postId,
+  });
+  if (error) {
+    if (error.code === "42501") throw new NotSignedInError();
+    throw error;
   }
-  await supabase.from("post_likes").insert({ user_id: user.id, post_id: postId });
-  return { liked: true };
+  return { liked: Boolean(data) };
 }
 
 export async function togglePostBookmark(postId: string) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  const { data: existing } = await supabase
-    .from("bookmarks")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("post_id", postId)
-    .maybeSingle();
-  if (existing) {
-    await supabase.from("bookmarks").delete().eq("id", existing.id);
-    return { bookmarked: false };
+  const { data, error } = await supabase.rpc("toggle_post_bookmark", {
+    p_post_id: postId,
+  });
+  if (error) {
+    if (error.code === "42501") throw new NotSignedInError();
+    throw error;
   }
-  await supabase
-    .from("bookmarks")
-    .insert({ user_id: user.id, post_id: postId });
-  return { bookmarked: true };
+  return { bookmarked: Boolean(data) };
 }

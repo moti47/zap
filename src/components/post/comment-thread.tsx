@@ -18,7 +18,12 @@ import { Textarea } from "../ui/textarea";
 import { Button } from "../ui/button";
 import { useZapStore, type UserComment } from "@/lib/store";
 import { getUser, seededComments, type SeededComment } from "@/lib/fixtures";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { TimeAgo } from "../ui/time-ago";
+import { createCommentAction } from "@/app/actions/social";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MAX_VISIBLE_DEPTH = 4;
 const MAX_LEN = 500;
@@ -99,9 +104,27 @@ export function CommentThread({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Optimistic Zustand update for the local thread renderer; if the
+  // post id is a real Supabase UUID, the comment is also persisted via
+  // the server action (with Zod + notification fanout). Falls back to
+  // local-only for fixture posts so the prototype keeps working.
+  const persistComment = (text: string, parentId: string | null) => {
+    addComment(postId, text, parentId);
+    if (UUID_RE.test(postId)) {
+      void createCommentAction({
+        postId,
+        body: text,
+        parentId: parentId ?? undefined,
+      }).then((r) => {
+        if (!r.ok) toast.error(r.error || "Comment failed to save");
+      });
+    }
+  };
+
   const submitTop = () => {
-    if (!body.trim()) return;
-    addComment(postId, body.trim(), null);
+    const text = body.trim();
+    if (!text) return;
+    persistComment(text, null);
     toast.success("Reply posted");
     setBody("");
   };
@@ -114,8 +137,9 @@ export function CommentThread({
   };
 
   const handleSubmitReply = (parentId: string, value: string) => {
-    if (!value.trim()) return;
-    addComment(postId, value.trim(), parentId);
+    const text = value.trim();
+    if (!text) return;
+    persistComment(text, parentId);
     toast.success("Reply posted");
     setReplyOpenFor(null);
   };
@@ -324,7 +348,7 @@ function CommentBranch({
               suppressHydrationWarning
               className="text-[10px] font-mono text-[#5A6175]"
             >
-              {timeAgo(node.createdAt)}
+              <TimeAgo iso={node.createdAt} />
             </span>
           </div>
           <p className="text-sm leading-relaxed mt-0.5 text-[#E5E5E5] whitespace-pre-wrap">

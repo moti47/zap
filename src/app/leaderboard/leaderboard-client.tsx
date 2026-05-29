@@ -10,8 +10,17 @@ import { Podium } from "@/components/leaderboard/podium";
 import { Button } from "@/components/ui/button";
 import { ZapMark } from "@/components/zap-logo";
 import { useZapStore } from "@/lib/store";
-import { users, CATEGORIES, type Category } from "@/lib/fixtures";
+import { users as fixtureUsers, CATEGORIES, type Category, type User } from "@/lib/fixtures";
 import { cn, formatLargeNumber, categoryColor } from "@/lib/utils";
+import type { LeaderboardRow } from "@/lib/db/leaderboard";
+
+interface LeaderboardClientProps {
+  /**
+   * Real Supabase rows for the leaderboard. Empty array → render the
+   * fixture data (demo mode or empty backend).
+   */
+  initialRows?: LeaderboardRow[];
+}
 
 type Range = "all-time" | "month" | "week";
 const RANGES: { id: Range; label: string }[] = [
@@ -26,17 +35,53 @@ const CAT_TABS: { id: CatTab; label: string }[] = [
   ...CATEGORIES.map((c) => ({ id: c, label: c[0].toUpperCase() + c.slice(1) })),
 ];
 
-export function LeaderboardClient() {
+/**
+ * Adapt a real-DB leaderboard row to the User shape the existing
+ * rendering code expects. Keeps the JSX untouched.
+ */
+function rowToUser(r: LeaderboardRow): User {
+  return {
+    id: r.id,
+    username: r.username,
+    name: r.name,
+    avatarUrl: r.avatarUrl ?? "",
+    bio: "",
+    joined: new Date(0).toISOString(),
+    followers: 0,
+    following: 0,
+    totalPredictions: r.totalPredictions,
+    pointsWon: r.pointsWon,
+    expertScores: r.expertScores as User["expertScores"],
+    brierScores: r.brierScores as User["brierScores"],
+    predictionsByCategory: {},
+    primaryCategory: r.primaryCategory as Category,
+    verified: false,
+    calibration: [],
+  };
+}
+
+export function LeaderboardClient({ initialRows = [] }: LeaderboardClientProps) {
   const [range, setRange] = useState<Range>("all-time");
   const [cat, setCat] = useState<CatTab>("overall");
   const followingIds = useZapStore((s) => s.followingUserIds);
   const toggleFollow = useZapStore((s) => s.toggleFollow);
 
+  // Real users from Supabase win. Fall back to fixtures only when the
+  // server passed an empty list (demo mode or empty backend).
+  const sourceUsers: User[] = useMemo(
+    () => (initialRows.length > 0 ? initialRows.map(rowToUser) : fixtureUsers),
+    [initialRows],
+  );
+  const isReal = initialRows.length > 0;
+
   const ranking = useMemo(() => {
-    const scored = users.map((u) => {
+    const scored = sourceUsers.map((u) => {
       const score =
         cat === "overall"
-          ? (Object.values(u.expertScores).reduce((a, b) => (a ?? 0) + (b ?? 0), 0) ?? 0) /
+          ? (Object.values(u.expertScores).reduce<number>(
+              (a, b) => a + (typeof b === "number" ? b : 0),
+              0,
+            )) /
             Math.max(1, Object.values(u.expertScores).length)
           : u.expertScores[cat] ?? 0;
       const adjusted =
@@ -44,7 +89,7 @@ export function LeaderboardClient() {
       return { user: u, score: adjusted };
     });
     return scored.sort((a, b) => b.score - a.score);
-  }, [cat, range]);
+  }, [cat, range, sourceUsers]);
 
   return (
     <div className="px-4 lg:px-6 py-6 pb-24 lg:pb-8 max-w-[1100px] mx-auto w-full">

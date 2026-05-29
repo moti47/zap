@@ -7,7 +7,8 @@ import { FileText, Trash2, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { useZapStore } from "@/lib/store";
 import { htmlToPlainText } from "@/lib/sanitize";
-import { timeAgo, cn, categoryColor } from "@/lib/utils";
+import { cn, categoryColor } from "@/lib/utils";
+import { TimeAgo } from "../ui/time-ago";
 
 interface DraftsMenuProps {
   status: "idle" | "saving" | "saved";
@@ -100,7 +101,7 @@ export function DraftsMenu({ status, currentDraftId, onLoad }: DraftsMenuProps) 
                           </span>
                         )}
                         <span className="text-[10px] font-mono text-[#5A6175]">
-                          {timeAgo(d.updatedAt)} ago
+                          <TimeAgo iso={d.updatedAt} /> ago
                         </span>
                         {d.images && d.images.length > 0 && (
                           <span className="text-[10px] font-mono text-[#5A6175]">

@@ -154,7 +154,7 @@ export function ProposalsQueue({
                             {new Date(p.created_at).toLocaleString()}
                           </span>
                           <span>·</span>
-                          <span>opens {p.initial_yes_price}¢ YES</span>
+                          <span>opens {p.initial_yes_price}% YES</span>
                           <span>·</span>
                           <span>
                             resolves {new Date(p.resolution_date).toLocaleDateString()}

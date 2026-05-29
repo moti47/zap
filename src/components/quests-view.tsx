@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useHydrated, useZapStore } from "@/lib/store";
+import { useViewer } from "@/lib/use-viewer";
 import {
   questProgressFromCounts,
   type ActiveQuest,
@@ -64,7 +65,10 @@ export function QuestsView() {
   const streak = useZapStore((s) => s.streak);
   const ledger = useZapStore(useShallow((s) => s.zapLedger.slice(0, 8)));
   const spendRecovery = useZapStore((s) => s.spendRecovery);
-  const points = useZapStore((s) => s.points);
+  // Round-2 — prefer authoritative DB balance over Zustand default.
+  const storePoints = useZapStore((s) => s.points);
+  const { viewer: questsViewer } = useViewer();
+  const points = questsViewer ? questsViewer.zaps : storePoints;
 
   useEffect(() => {
     if (!hydrated) return;

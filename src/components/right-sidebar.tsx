@@ -16,8 +16,14 @@
 
 import { StreakCard } from "./streak-card";
 import { QuestsCard } from "./quests-card";
+import { useViewer } from "@/lib/use-viewer";
 
 export function RightSidebar() {
+  // Round-3 Item #1 — gamification widgets are personal-only. Render
+  // NOTHING for anonymous viewers (no skeleton, no placeholder); the
+  // feed column expands naturally into the freed grid space.
+  const { viewer, loading } = useViewer();
+  if (loading || !viewer) return null;
   return (
     <aside
       aria-label="Sidebar"

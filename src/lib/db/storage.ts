@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { NotSignedInError } from "@/lib/auth";
 
 /**
  * Upload a single image to the post-images bucket.
@@ -13,7 +14,7 @@ export async function uploadPostImage(file: File): Promise<{ url: string }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
 
   const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
     (file.type.split("/")[1] ?? "png");
@@ -44,7 +45,7 @@ export async function uploadAvatar(file: File): Promise<{ url: string }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
 
   const ext =
     file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
@@ -75,7 +76,7 @@ export async function uploadBanner(file: File): Promise<{ url: string }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
 
   const ext =
     file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||

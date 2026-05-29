@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { CATEGORIES, type Category } from "@/lib/fixtures";
 import { categoryColor, cn } from "@/lib/utils";
+import { getCategoryStyle } from "@/lib/constants/categories";
 import { adminCreateMarketAction } from "@/app/admin/actions";
 
 interface Props {
@@ -143,14 +144,15 @@ export function AdminCreateMarketForm({ categoryIdsBySlug }: Props) {
           <div className="flex flex-wrap gap-1.5">
             {CATEGORIES.map((c) => {
               const active = c === category;
-              const color = categoryColor(c);
+              const style = getCategoryStyle(c);
+              const color = style.color;
               return (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setCategory(c)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-[12.5px] font-semibold capitalize transition-all",
+                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-[12.5px] font-semibold transition-all",
                     active ? "scale-[1.03]" : "hover:scale-[1.02]",
                   )}
                   style={{
@@ -160,8 +162,10 @@ export function AdminCreateMarketForm({ categoryIdsBySlug }: Props) {
                     boxShadow: active ? `0 0 0 2px ${color}33` : undefined,
                   }}
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ background: color }} />
-                  {c}
+                  <span aria-hidden className="text-[13px] leading-none">
+                    {style.icon}
+                  </span>
+                  {style.name}
                 </button>
               );
             })}
@@ -199,7 +203,7 @@ export function AdminCreateMarketForm({ categoryIdsBySlug }: Props) {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={`Initial YES price · ${yesPrice}¢`}>
+          <Field label={`Initial YES probability · ${yesPrice}%`}>
             <input
               type="range"
               min={1}
@@ -209,8 +213,8 @@ export function AdminCreateMarketForm({ categoryIdsBySlug }: Props) {
               className="w-full accent-[#FFE600]"
             />
             <div className="mt-1 flex items-center justify-between text-[11px] font-mono">
-              <span className="text-[#36D399]">YES {yesPrice}¢</span>
-              <span className="text-[#FF4757]">NO {100 - yesPrice}¢</span>
+              <span className="text-[#36D399]">YES {yesPrice}%</span>
+              <span className="text-[#FF4757]">NO {100 - yesPrice}%</span>
             </div>
           </Field>
           <Field

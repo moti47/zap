@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/lib/supabase/types";
+import { NotSignedInError } from "@/lib/auth";
 
 export async function getCurrentProfile(): Promise<ProfileRow | null> {
   const supabase = await createClient();
@@ -43,7 +44,7 @@ export async function updateMyProfile(patch: Partial<ProfileRow>) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) throw new NotSignedInError();
   const safe: Partial<ProfileRow> = {
     name: patch.name,
     bio: patch.bio,

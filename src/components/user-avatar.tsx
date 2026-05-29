@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import { cn, categoryColor } from "@/lib/utils";
 import type { Category } from "@/lib/fixtures";
 
@@ -72,6 +75,11 @@ export function UserAvatar({
   const px = pixelSize[size];
   const effectiveSrc = src ? withCacheBust(src, cacheKey) : null;
   const isDataUrl = effectiveSrc?.startsWith("data:") ?? false;
+  // Round-3 Item #3 — when next/image fails to load (404, CORS, broken
+  // CDN), flip to the initials fallback instead of leaving a busted-
+  // image icon in the UI. Reset each time the src changes.
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = !!effectiveSrc && !imgFailed;
   return (
     <div className={cn("relative inline-block flex-shrink-0", className)}>
       <div
@@ -87,9 +95,10 @@ export function UserAvatar({
           }, #14161D)`,
         }}
       >
-        {effectiveSrc ? (
+        {showImage ? (
           <Image
-            src={effectiveSrc}
+            key={effectiveSrc}
+            src={effectiveSrc as string}
             alt={name}
             width={px}
             height={px}
@@ -98,10 +107,11 @@ export function UserAvatar({
             // Data URLs and same-host (Supabase) uploads can skip the
             // Next image optimizer — they're already correctly sized.
             unoptimized={isDataUrl}
+            onError={() => setImgFailed(true)}
             className="h-full w-full object-cover"
           />
         ) : (
-          <span className="text-xs">{initials}</span>
+          <span className="text-xs select-none">{initials || "?"}</span>
         )}
       </div>
       {showScore && score !== undefined && (

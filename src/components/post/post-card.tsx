@@ -11,9 +11,17 @@ import {
   MoreHorizontal,
   Flame,
   Rocket,
+  Info,
+  Ban,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown";
 import { UserAvatar } from "../user-avatar";
-import { ExpertBadge, CategoryTag } from "../expert-badge";
+import { CategoryTag } from "../expert-badge";
 import { MarketCardCompact } from "../market/market-card-compact";
 import { ZapMark } from "../zap-logo";
 import { Badge } from "../ui/badge";
@@ -23,8 +31,9 @@ import { BoostPerformance } from "./boost-performance";
 import { toast } from "sonner";
 import { useZapStore, type UserPost } from "@/lib/store";
 import { currentUser, getMarket, getUser, type Post } from "@/lib/fixtures";
-import { cn, timeAgo, formatLargeNumber } from "@/lib/utils";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { cn, categoryColor, formatLargeNumber } from "@/lib/utils";
+import { TimeAgo } from "../ui/time-ago";
+import { sanitizeHtml, linkifyHashtags } from "@/lib/sanitize";
 import { SellSheet } from "../market/sell-sheet";
 import { useRequireSignIn } from "@/lib/require-sign-in";
 import {
@@ -62,7 +71,29 @@ export function PostCard({
   rankingBreakdown,
 }: PostCardProps) {
   const isMineFlag = isUserPost(post);
-  const user = isMineFlag ? currentUser : getUser(post.userId);
+  const fixtureUser = isMineFlag ? currentUser : getUser(post.userId);
+  // For Supabase posts whose author isn't in the fixture list, synthesize
+  // a minimal User shape from the embedded author metadata.
+  const user = fixtureUser ?? (() => {
+    if (!isUserPost(post)) return null;
+    const up = post as UserPost;
+    if (!up.authorName) return null;
+    return {
+      id: up.userId,
+      name: up.authorName,
+      username: up.authorUsername ?? up.userId,
+      avatarUrl: up.authorAvatar ?? null,
+      primaryCategory: "tech" as const,
+      expertScores: { tech: 50 },
+      verified: false,
+      bio: "",
+      followers: 0,
+      following: 0,
+      totalPredictions: 0,
+      pointsWon: 0,
+      joined: new Date().toISOString(),
+    } as any;
+  })();
   const liked = useZapStore((s) => s.likedPostIds.includes(post.id));
   const bookmarked = useZapStore((s) => s.bookmarkedPostIds.includes(post.id));
   const toggleLike = useZapStore((s) => s.toggleLike);
@@ -72,10 +103,21 @@ export function PostCard({
   const recordClick = useZapStore((s) => s.recordClick);
   const bumpAffinity = useZapStore((s) => s.bumpAffinity);
   const applyThrottleCheck = useZapStore((s) => s.applyThrottleCheck);
+  const toggleBlockAuthor = useZapStore((s) => s.toggleBlockAuthor);
+  const blocked = useZapStore((s) =>
+    s.blockedAuthorIds.includes((post as any).userId ?? ""),
+  );
 
   const [threadOpen, setThreadOpen] = useState(defaultThreadOpen);
   const [floatHeart, setFloatHeart] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(false);
+
+  // Round-3 Item #5 — refuse to route to /profile/undefined when the
+  // author username is missing/empty. Falls back to a "not initialized"
+  // toast and a non-interactive avatar/name pair so the card stays
+  // usable but doesn't crash the router.
+  // NOTE: `user` is resolved below; this helper is defined after.
 
   // Anonymous users see the buttons but ANY click bounces them to
   // sign-in. Keeps the UI feeling real and complete.
@@ -111,6 +153,24 @@ export function PostCard({
 
   if (!user) return null;
 
+  // Round-3 Item #5 — only render a real <Link> when we can build a
+  // valid /profile/<username>. Empty / undefined / literal "undefined"
+  // resolves the click to a friendly toast instead of routing into
+  // /profile/undefined and triggering the global not-found.
+  const profileHref: string | null = (() => {
+    if (isMineFlag) return "/profile/you";
+    const u = (user.username ?? "").toString().trim();
+    if (!u || u === "undefined" || u === "null") return null;
+    return `/profile/${encodeURIComponent(u)}`;
+  })();
+  const guardProfileClick = (e: React.MouseEvent) => {
+    if (profileHref) return;
+    e.preventDefault();
+    toast.info("User profile not initialized yet", {
+      description: "This author hasn't finished setting up their profile.",
+    });
+  };
+
   const market = "marketId" in post && post.marketId ? getMarket(post.marketId) : null;
   const category = "category" in post ? post.category : undefined;
   const isLaunch = post.type === "launch";
@@ -120,6 +180,11 @@ export function PostCard({
   const userPost = isMineFlag ? (post as UserPost) : null;
   const boostActive =
     !!userPost?.boostUntil && new Date(userPost.boostUntil).getTime() > Date.now();
+  // Drives the multi-layered affinity ring + halo around the avatar.
+  // Falls back to the neutral grey from `categoryColor()` for users
+  // whose primary category isn't in the curated palette.
+  const primaryColor = categoryColor(user.primaryCategory);
+  const expertScore = user.expertScores[user.primaryCategory] ?? 50;
 
   const handleLike = gate(() => {
     if (!liked) {
@@ -194,7 +259,7 @@ export function PostCard({
               <Flame className="h-3 w-3" /> New market
             </Badge>
             <span className="text-[11px] font-mono text-[#5A6175]">
-              Just launched · {timeAgo(post.createdAt)} ago
+              Just launched · <TimeAgo iso={post.createdAt} /> ago
             </span>
             {market && (
               <span className="ml-auto">
@@ -205,22 +270,74 @@ export function PostCard({
         </>
       )}
 
-      {/* Author row */}
-      <div className="flex items-center gap-3 relative">
-        <Link href={isMineFlag ? "/profile/you" : `/profile/${user.username}`}>
+      {/* Author row — avatar-dominant with a multi-layered cyber-neon
+          affinity ring (Option A). The score chip riding the avatar's
+          bottom-right (rendered inside UserAvatar via `showScore`)
+          replaces the standalone <ExpertBadge> pill the row used to
+          carry, so the rank/specialty signal is now inseparable from
+          the face. */}
+      <div className="flex items-start gap-3.5 relative">
+        <Link
+          href={profileHref ?? "#"}
+          onClick={guardProfileClick}
+          aria-label={
+            profileHref
+              ? `Open ${user.name}'s profile`
+              : "User profile not initialized"
+          }
+          aria-disabled={!profileHref}
+          tabIndex={profileHref ? 0 : -1}
+          className={cn(
+            "relative inline-block flex-shrink-0 group/avatar",
+            !profileHref && "pointer-events-auto cursor-not-allowed opacity-90",
+          )}
+        >
+          {/* Outer halo — soft bloom in the user's primary-category
+              hue. Intensifies on hover. Sits OUTSIDE the avatar so
+              UserAvatar's own border + floating score chip render
+              cleanly on top. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -inset-1.5 rounded-full opacity-60 blur-md transition-opacity duration-200 group-hover/avatar:opacity-90"
+            style={{
+              background: `radial-gradient(closest-side, ${primaryColor}66, transparent 75%)`,
+            }}
+          />
+          {/* Inner crisp rim — the affinity ring proper. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -inset-[3px] rounded-full"
+            style={{
+              boxShadow: `0 0 0 1px ${primaryColor}aa, 0 0 14px ${primaryColor}55`,
+            }}
+          />
+          {/* The avatar itself — promoted to `lg` so it anchors the
+              card visually. UserAvatar already falls back to stylised
+              initials over a category-tinted gradient when `src` is
+              null/empty, so real photos and fallbacks both look
+              first-class. */}
           <UserAvatar
             src={user.avatarUrl}
             name={user.name}
             category={user.primaryCategory}
-            score={user.expertScores[user.primaryCategory]}
-            size="md"
+            score={expertScore}
+            size="lg"
+            showScore
           />
         </Link>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Link
-              href={isMineFlag ? "/profile/you" : `/profile/${user.username}`}
-              className="font-semibold text-[14.5px] hover:text-[#FFE600] transition-colors"
+              href={profileHref ?? "#"}
+              onClick={guardProfileClick}
+              aria-disabled={!profileHref}
+              tabIndex={profileHref ? 0 : -1}
+              className={cn(
+                "font-semibold text-[15px] transition-colors",
+                profileHref
+                  ? "hover:text-[#FFE600]"
+                  : "cursor-not-allowed text-white/90",
+              )}
             >
               {user.name}
             </Link>
@@ -240,10 +357,6 @@ export function PostCard({
                 You
               </span>
             )}
-            <ExpertBadge
-              category={user.primaryCategory}
-              score={user.expertScores[user.primaryCategory] ?? 50}
-            />
             {isPrediction && (
               <span className="text-[12px] font-mono text-[#5A6175]">
                 made a prediction
@@ -255,29 +368,74 @@ export function PostCard({
           </div>
           <div className="text-xs font-mono text-[#5A6175] mt-0.5">
             <span className="text-[#8B92A8]">@{user.username}</span> ·{" "}
-            {timeAgo(post.createdAt)}
+            <TimeAgo iso={post.createdAt} />
             {isPrediction
               ? ` · staked ${(post as any).staked}⚡`
               : ` · ${formatLargeNumber(post.views)} views`}
           </div>
         </div>
-        <ExposureExplain
-          post={post}
-          author={user}
-          category={explainCategory}
-          rankingBreakdown={rankingBreakdown}
-        />
-        <button className="text-[#5A6175] hover:text-white p-1.5" aria-label="More">
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
+        {/* Item #4 — the standalone "Why am I seeing this?" Info icon
+            was relocated into this 3-dots menu. The dialog version of
+            ExposureExplain is rendered below, controlled by
+            `explainOpen`. The menu also exposes Block-user, which
+            mutes the author in the local feed snapshot. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="text-[#5A6175] hover:text-white p-1.5"
+              aria-label="More post actions"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setExplainOpen(true);
+              }}
+              className="cursor-pointer"
+            >
+              <Info className="h-4 w-4 mr-2 text-[#8B92A8]" />
+              Why am I seeing this?
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                toggleBlockAuthor(user.id);
+                toast.success(
+                  blocked
+                    ? `Unblocked @${user.username}`
+                    : `Blocked @${user.username}. Future posts hidden.`,
+                );
+              }}
+              className="cursor-pointer text-[#FF4757] focus:text-[#FF4757]"
+            >
+              <Ban className="h-4 w-4 mr-2" />
+              {blocked
+                ? "Unblock posts from this user"
+                : "Block posts from this user"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <ExposureExplain
+        post={post}
+        author={user}
+        category={explainCategory}
+        rankingBreakdown={rankingBreakdown}
+        controlledOpen={explainOpen}
+        onOpenChange={setExplainOpen}
+      />
 
       {/* Body */}
       {post.body && (
         isUserPost(post) && /<[a-z][\s\S]*>/i.test(post.body) ? (
           <div
             className="rich-body text-[15px] leading-[1.55] mt-3.5 mb-2.5 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-2 [&_blockquote]:border-l-2 [&_blockquote]:border-[#FFE600] [&_blockquote]:pl-3 [&_blockquote]:text-[#8B92A8] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[#FFE600] [&_a]:underline [&_pre]:font-mono [&_pre]:bg-[#0E1016] [&_pre]:px-2 [&_pre]:py-1 [&_pre]:rounded [&_img]:max-h-[300px] [&_img]:rounded [&_img]:my-1"
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(post.body) }}
+            dangerouslySetInnerHTML={{ __html: linkifyHashtags(sanitizeHtml(post.body)) }}
           />
         ) : (
           <p className="text-[15px] leading-[1.55] mt-3.5 mb-2.5 whitespace-pre-wrap">

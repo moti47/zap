@@ -129,6 +129,17 @@ export async function updateSession(request: NextRequest) {
   const isAdminPath =
     pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
 
+  // Auth-aware responses must never live in a shared cache. We
+  // attach this header on every non-redirect path that returns the
+  // upstream response — the cookie state we just refreshed is per-user.
+  const sealResponse = () => {
+    response.headers.set(
+      "Cache-Control",
+      "private, no-cache, no-store, must-revalidate, max-age=0",
+    );
+    return response;
+  };
+
   // Tier 1: public assets — always allowed.
   if (isPublicAsset(pathname)) {
     return response;
@@ -156,7 +167,7 @@ export async function updateSession(request: NextRequest) {
 
   // Tier 4: public-read surfaces — anon browse is allowed.
   if (isPublicRead(pathname)) {
-    return response;
+    return sealResponse();
   }
 
   // Tier 5: anything else — require auth.
@@ -167,10 +178,5 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Auth-aware responses should never live in a shared cache.
-  response.headers.set(
-    "Cache-Control",
-    "private, no-cache, no-store, must-revalidate, max-age=0",
-  );
-  return response;
+  return sealResponse();
 }

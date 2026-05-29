@@ -3,14 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { updateMyProfile } from "@/lib/db/profiles";
 import { requireUser, NotSignedInError } from "@/lib/auth";
+import { ProfilePatch, formatZodError } from "@/lib/validation";
 
-export interface ProfilePatch {
-  name?: string;
-  bio?: string | null;
-  avatar_url?: string | null;
-  cover_gradient?: string | null;
-  banner_url?: string | null;
-}
+export type { ProfilePatch } from "@/lib/validation";
 
 /**
  * Server action invoked from the EditProfileModal. Persists allowed fields
@@ -18,7 +13,7 @@ export interface ProfilePatch {
  * (RLS-scoped to the owner).
  */
 export async function updateMyProfileAction(
-  patch: ProfilePatch,
+  patch: unknown,
   opts?: { username?: string },
 ): Promise<{
   ok: boolean;
@@ -27,26 +22,17 @@ export async function updateMyProfileAction(
 }> {
   try {
     await requireUser();
-    const cleaned: ProfilePatch = {};
-    if (typeof patch.name === "string") {
-      const trimmed = patch.name.trim().slice(0, 50);
-      if (!trimmed) return { ok: false, error: "Name required" };
-      cleaned.name = trimmed;
+    const parsed = ProfilePatch.safeParse(patch);
+    if (!parsed.success) {
+      return { ok: false, error: formatZodError(parsed.error) };
     }
-    if (patch.bio !== undefined) {
-      cleaned.bio =
-        patch.bio == null ? null : String(patch.bio).slice(0, 280);
+    const v = parsed.data;
+    // Strip explicit-undefined keys so we don't overwrite existing
+    // columns with null on a partial update.
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (val !== undefined) cleaned[k] = val;
     }
-    if (patch.avatar_url !== undefined) {
-      cleaned.avatar_url = patch.avatar_url || null;
-    }
-    if (patch.cover_gradient !== undefined) {
-      cleaned.cover_gradient = patch.cover_gradient || null;
-    }
-    if (patch.banner_url !== undefined) {
-      cleaned.banner_url = patch.banner_url || null;
-    }
-
     const profile = await updateMyProfile(cleaned);
 
     if (opts?.username) revalidatePath(`/profile/${opts.username}`);

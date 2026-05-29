@@ -95,6 +95,59 @@ export function sanitizeHtml(input: string): string {
   return root.innerHTML;
 }
 
+/**
+ * Wrap bare `#word` patterns in post body HTML with category links.
+ * Skips text that's already inside an <a> tag.
+ * Must be called AFTER sanitizeHtml so the DOM is already trusted.
+ */
+export function linkifyHashtags(html: string): string {
+  if (!html || !html.includes("#")) return html;
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
+
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstChild as Element | null;
+  if (!root) return html;
+
+  function processText(node: Text) {
+    const text = node.textContent ?? "";
+    if (!/#\w/.test(text)) return;
+    // Bail if already inside an anchor
+    let cur: Node | null = node.parentNode;
+    while (cur && cur !== root) {
+      if ((cur as Element).tagName === "A") return;
+      cur = cur.parentNode;
+    }
+    const parts = text.split(/(#[A-Za-z]\w*)/g);
+    if (parts.length <= 1) return;
+    const frag = doc.createDocumentFragment();
+    for (const part of parts) {
+      if (/^#[A-Za-z]\w*$/.test(part)) {
+        const a = doc.createElement("a");
+        a.href = `/category/${part.slice(1).toLowerCase()}`;
+        a.textContent = part;
+        a.className = "hashtag-link";
+        frag.appendChild(a);
+      } else {
+        frag.appendChild(doc.createTextNode(part));
+      }
+    }
+    node.parentNode?.replaceChild(frag, node);
+  }
+
+  function walk(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      processText(node as Text);
+      return;
+    }
+    if ((node as Element).tagName === "A") return;
+    // snapshot childNodes — walk mutates in place
+    for (const child of Array.from(node.childNodes)) walk(child);
+  }
+
+  walk(root);
+  return root.innerHTML;
+}
+
 export function htmlToPlainText(input: string): string {
   if (!input) return "";
   if (typeof window === "undefined" || typeof DOMParser === "undefined") {

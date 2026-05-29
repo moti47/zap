@@ -67,40 +67,22 @@ export function timeUntil(dateString: string): string {
   return `${hours}h ${minutes}m`;
 }
 
+// Round-2 Item #4 — these three helpers used to hold their own 6-slug
+// dictionary, which is why categories beyond the original set rendered
+// flat grey. They now delegate to the single CATEGORY_STYLE_MAP so any
+// of the 50 slugs (and any new DB slug) gets a real color everywhere.
+import { getCategoryStyle } from "./constants/categories";
+
 export function categoryColor(category: string): string {
-  const map: Record<string, string> = {
-    politics: "#A371F7",
-    crypto: "#FF8A3D",
-    sports: "#36D399",
-    tech: "#4DA3FF",
-    economy: "#F7768E",
-    entertainment: "#FF6FB5",
-  };
-  return map[category.toLowerCase()] ?? "#8B92A8";
+  return getCategoryStyle(category).color;
 }
 
 export function categoryRingClass(category: string): string {
-  const map: Record<string, string> = {
-    politics: "ring-[#A371F7]",
-    crypto: "ring-[#FF8A3D]",
-    sports: "ring-[#36D399]",
-    tech: "ring-[#4DA3FF]",
-    economy: "ring-[#F7768E]",
-    entertainment: "ring-[#FF6FB5]",
-  };
-  return map[category.toLowerCase()] ?? "ring-[#8B92A8]";
+  return getCategoryStyle(category).ringClass;
 }
 
 export function categoryTextClass(category: string): string {
-  const map: Record<string, string> = {
-    politics: "text-[#A371F7]",
-    crypto: "text-[#FF8A3D]",
-    sports: "text-[#36D399]",
-    tech: "text-[#4DA3FF]",
-    economy: "text-[#F7768E]",
-    entertainment: "text-[#FF6FB5]",
-  };
-  return map[category.toLowerCase()] ?? "text-[#8B92A8]";
+  return getCategoryStyle(category).textClass;
 }
 
 export function avatarUrl(seed: string, style: string = "shapes"): string {
