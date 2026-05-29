@@ -51,7 +51,9 @@ export async function getMyPositions() {
   if (!user) return [];
   const { data } = await supabase
     .from("positions")
-    .select("*, market:markets(id, question, yes_price, no_price, status, outcome)")
+    .select(
+      "*, market:markets(id, question, yes_price, no_price, status, outcome, resolution_date, category:categories(slug,name,color))",
+    )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return data ?? [];

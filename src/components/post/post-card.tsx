@@ -31,15 +31,18 @@ import { BoostPerformance } from "./boost-performance";
 import { toast } from "sonner";
 import { useZapStore, type UserPost } from "@/lib/store";
 import { currentUser, getMarket, getUser, type Post } from "@/lib/fixtures";
+import { useViewer } from "@/lib/use-viewer";
 import { cn, categoryColor, formatLargeNumber } from "@/lib/utils";
 import { TimeAgo } from "../ui/time-ago";
 import { sanitizeHtml, linkifyHashtags } from "@/lib/sanitize";
+import { linkifyMentions } from "@/lib/mentions";
 import { SellSheet } from "../market/sell-sheet";
 import { useRequireSignIn } from "@/lib/require-sign-in";
 import {
   toggleLikeAction,
   toggleBookmarkAction,
 } from "@/app/actions/social";
+import { fireBumpQuest } from "@/lib/quest-bump";
 
 import type { PersonalizedBreakdown } from "@/lib/ranking";
 
@@ -71,10 +74,11 @@ export function PostCard({
   rankingBreakdown,
 }: PostCardProps) {
   const isMineFlag = isUserPost(post);
+  const { viewer } = useViewer();
   const fixtureUser = isMineFlag ? currentUser : getUser(post.userId);
   // For Supabase posts whose author isn't in the fixture list, synthesize
   // a minimal User shape from the embedded author metadata.
-  const user = fixtureUser ?? (() => {
+  let user = fixtureUser ?? (() => {
     if (!isUserPost(post)) return null;
     const up = post as UserPost;
     if (!up.authorName) return null;
@@ -94,6 +98,20 @@ export function PostCard({
       joined: new Date().toISOString(),
     } as any;
   })();
+  // When this is the viewer's own post, prefer the live profile from
+  // Supabase (real name, username, avatar) over the "You" placeholder
+  // baked into fixtures.currentUser. Falls back to the embedded
+  // authorName/authorAvatar (set at post-create time) so old posts still
+  // show the right identity even before useViewer resolves.
+  if (isMineFlag && user) {
+    const up = post as UserPost;
+    user = {
+      ...user,
+      name: viewer?.name || up.authorName || user.name,
+      username: viewer?.username || up.authorUsername || user.username,
+      avatarUrl: viewer?.avatar_url || up.authorAvatar || user.avatarUrl,
+    };
+  }
   const liked = useZapStore((s) => s.likedPostIds.includes(post.id));
   const bookmarked = useZapStore((s) => s.bookmarkedPostIds.includes(post.id));
   const toggleLike = useZapStore((s) => s.toggleLike);
@@ -191,6 +209,8 @@ export function PostCard({
       setFloatHeart(true);
       setTimeout(() => setFloatHeart(false), 700);
       if (explainCategory) bumpAffinity(explainCategory, "like");
+      // Persist quest progress so "like 5 posts" survives reloads.
+      fireBumpQuest("like_5");
     }
     // Optimistic local update
     toggleLike(post.id);
@@ -206,7 +226,9 @@ export function PostCard({
     }
   });
   const handleBookmark = gate(() => {
+    const wasBookmarked = bookmarked;
     toggleBookmark(post.id);
+    if (!wasBookmarked) fireBumpQuest("save_3");
     if (looksLikeServerPostId(post.id)) {
       void toggleBookmarkAction(post.id).then((result) => {
         if (!result.ok) toggleBookmark(post.id); // roll back
@@ -371,7 +393,9 @@ export function PostCard({
             <TimeAgo iso={post.createdAt} />
             {isPrediction
               ? ` · staked ${(post as any).staked}⚡`
-              : ` · ${formatLargeNumber(post.views)} views`}
+              : post.views > 0
+                ? ` · ${formatLargeNumber(post.views)} views`
+                : ""}
           </div>
         </div>
         {/* Item #4 — the standalone "Why am I seeing this?" Info icon
@@ -435,7 +459,9 @@ export function PostCard({
         isUserPost(post) && /<[a-z][\s\S]*>/i.test(post.body) ? (
           <div
             className="rich-body text-[15px] leading-[1.55] mt-3.5 mb-2.5 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-2 [&_blockquote]:border-l-2 [&_blockquote]:border-[#FFE600] [&_blockquote]:pl-3 [&_blockquote]:text-[#8B92A8] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[#FFE600] [&_a]:underline [&_pre]:font-mono [&_pre]:bg-[#0E1016] [&_pre]:px-2 [&_pre]:py-1 [&_pre]:rounded [&_img]:max-h-[300px] [&_img]:rounded [&_img]:my-1"
-            dangerouslySetInnerHTML={{ __html: linkifyHashtags(sanitizeHtml(post.body)) }}
+            dangerouslySetInnerHTML={{
+              __html: linkifyMentions(linkifyHashtags(sanitizeHtml(post.body))),
+            }}
           />
         ) : (
           <p className="text-[15px] leading-[1.55] mt-3.5 mb-2.5 whitespace-pre-wrap">

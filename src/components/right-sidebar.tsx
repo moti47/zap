@@ -18,12 +18,21 @@ import { StreakCard } from "./streak-card";
 import { QuestsCard } from "./quests-card";
 import { useViewer } from "@/lib/use-viewer";
 
-export function RightSidebar() {
+export function RightSidebar({ initialSignedIn = false }: { initialSignedIn?: boolean }) {
   // Round-3 Item #1 — gamification widgets are personal-only. Render
   // NOTHING for anonymous viewers (no skeleton, no placeholder); the
   // feed column expands naturally into the freed grid space.
+  // When the server already resolved sign-in (page.tsx), we paint the
+  // sidebar on the first render rather than waiting on useViewer —
+  // streak + quests show up in lockstep with the feed.
   const { viewer, loading } = useViewer();
-  if (loading || !viewer) return null;
+  if (loading) {
+    if (!initialSignedIn) return null;
+    // Server says signed-in, so render immediately while the client
+    // confirms; subsequent renders use the live viewer state.
+  } else if (!viewer) {
+    return null;
+  }
   return (
     <aside
       aria-label="Sidebar"

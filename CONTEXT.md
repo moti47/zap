@@ -291,3 +291,118 @@ files must live under a folder matching the uploader's `auth.uid()`.
     initial value was numeric; null-safe-ified those in
     `lib/fixtures.ts` and `app/leaderboard/leaderboard-client.tsx`.
     Type-check stays 100% clean.
+
+- ✅ **Polish 3 — viewer identity, real portfolio, faster feed,
+  discoverable propose.**
+  - **Own posts use the real viewer identity.** `components/post/
+    post-card.tsx` was always sourcing `currentUser` (the legacy "You"
+    fixture) for `isMineFlag` posts, which is why the feed rendered
+    "Y" / "You" / no avatar even for fully-signed-in profiles. The
+    card now calls `useViewer()` and, when the post is mine, overrides
+    `name` / `username` / `avatar_url` with the live Supabase profile
+    (falling back to the embedded `authorName` / `authorAvatar` that
+    real Supabase rows already carry, then to the fixture as the last
+    resort). `currentUser.followers` set from 12 → 0 so the
+    placeholder profile no longer fabricates social proof. The "views"
+    line in the byline only renders when `post.views > 0` (kills the
+    "0 views" cruft on newly-created posts).
+  - **Portfolio rebuilt on real positions.** `getMyPositions` now
+    joins category + resolution date. `/portfolio` SSR-fetches both
+    positions and the live `profiles.zaps` balance and passes them
+    into `PortfolioView`, which dropped the Zustand `positions` slice
+    entirely. Buy-in cost, live valuation, and PnL are all derived
+    from the actual `positions` / `markets.yes_price` numbers. Added
+    an Open-positions count to the summary tiles and a resolved-state
+    badge on each row (so settled markets read as "Resolved · YES /
+    NO" with the appropriate accent). Server-resolved auth means no
+    skeleton flicker on first paint.
+  - **Feed paints composer + sidebar without a client round-trip.**
+    `app/page.tsx` resolves the Supabase auth user in parallel with
+    `listFeed` and forwards `initialSignedIn` into `FeedStream` and
+    `RightSidebar`. `FeedStream` now bases the first-paint composer
+    decision on `initialSignedIn` (falling back to the client
+    `useViewer` resolution when the server flag is missing).
+    `RightSidebar` paints `<StreakCard />` + `<QuestsCard />`
+    immediately when the server already confirmed sign-in. Net effect:
+    the "feed → wait → composer pops in → streak/quests pop in" jank
+    the user reported is gone — the whole shell is there on the first
+    frame.
+  - **Create Market discoverable, attach picker pulls real markets.**
+    `topbar.tsx` re-adds a `Propose` nav entry (authOnly) so signed-in
+    users see the affordance. `attach-market-dialog.tsx` lazy-loads
+    real open markets via the browser Supabase client (mapped into
+    the `Market` shape used by the catalog) the moment the dialog
+    opens; falls back to fixtures only in demo / no-env mode. When
+    the catalog is empty after filtering, a "Propose a new market"
+    CTA links to `/propose`.
+  - **Constraints.** Visual design, animations, and Tailwind palette
+    unchanged. No working surfaces touched outside the
+    audit-identified bugs.
+
+- ✅ **Polish 4 — shared viewer cache, persisted quests + streak,
+  real market bookmarks, mention links, lean profile.**
+  - **Shared viewer cache.** `lib/use-viewer.ts` was instantiating a
+    per-hook `useState({viewer:null,loading:true})` — the topbar
+    resolved fast and showed `9,999,999 ZAPS` while the trade panel
+    still saw `viewer = null` and fell back to the Zustand `points`
+    default (50), producing the screenshot bug of "Balance after
+    trade: 13" vs the topbar balance. Refactored to a module-level
+    `sharedViewer` + `stateListeners` set. The first mounted hook
+    triggers a single fetch + realtime subscription; every
+    subsequent hook reads the cache instantly. Postgres realtime
+    updates, optimistic `bumpViewerZaps` bumps, and `SIGNED_OUT`
+    events all broadcast through `setSharedViewer` → every consumer
+    re-renders in the same tick.
+  - **Persisted daily quests + streak (migration 0011).** New
+    `0011_quests_streak_persistence.sql` adds columns to
+    `profiles` (`quest_day`, `quest_progress jsonb`, `quest_claimed
+    jsonb`, `streak_current`, `streak_longest`, `streak_last_check_in
+    date`) plus three security-definer RPCs:
+    - `bump_quest(kind, delta, expected_day)` — increments per-day
+      counter, rolls the map atomically when the client's local day
+      no longer matches `quest_day`.
+    - `claim_quest_reward(kind, goal, reward, expected_day)` —
+      verifies progress ≥ goal, not already claimed, marks claimed,
+      credits `profiles.zaps` in one transaction. Returns the new
+      balance.
+    - `touch_streak(today, daily_reward)` — once per UTC day,
+      extends the streak (or resets to 1 after a gap), updates
+      `streak_longest`, and credits the daily reward.
+    The Postgres realtime UPDATE on `profiles` propagates the new
+    balance into every BalancePill consumer automatically.
+  - **Server actions + client wiring.** New
+    `src/app/quests/actions.ts` exposes `bumpQuestAction`,
+    `claimQuestAction`, `touchStreakAction` (Zod-checked,
+    NotSignedIn-aware). `src/lib/quest-bump.ts` is a fire-and-forget
+    helper called from the high-traffic spots — composer publish
+    (`create_post`, `create_post_image`, `attach_market`), trade
+    panel BUY (`trade_market`), post-card like (`like_5`) and
+    bookmark (`save_3`). `StreakCard` calls `touchStreakAction` once
+    per mount when signed in (idempotent server-side); a fresh
+    check-in toasts the credited Zaps. `QuestsCard` + `QuestsView`
+    claim buttons now run the optimistic Zustand claim AND the
+    server action, so the real `profiles.zaps` credit lands too. The
+    Zustand mirror keeps the UI responsive; the server is the
+    source of truth for balance.
+  - **Market bookmarks persist.** `src/app/actions/social.ts`
+    exposes a new `toggleMarketBookmarkAction` wrapping the
+    `toggle_market_bookmark` RPC. `MarketCardCompact` now calls it
+    alongside the optimistic Zustand toggle when the market id is a
+    UUID, so saved markets show up on `/saved#markets` after a
+    reload. Posts already had the equivalent wiring.
+  - **@mentions linkified in post bodies.** `linkifyMentions` from
+    `lib/mentions.ts` was implemented in Phase 9 but never wired into
+    the renderer. `PostCard` now pipes the sanitized HTML through
+    `linkifyHashtags` and `linkifyMentions` so `@username` tokens
+    become real `/profile/{username}` anchors (matches the spec
+    behavior described in CONTEXT.md Phase 9).
+  - **Profile cleanup.** Dropped the `CalibrationChart` block from
+    `/profile/[username]` — the user flagged it as a huge graph that
+    didn't earn the space. The `ExpertScoresStrip` and the
+    Posts/Markets/Activity tabs convey the same signal more
+    compactly. The `calibration-chart.tsx` component is still in
+    the tree but no longer imported by any route.
+  - **Constraints.** Visual design (Tailwind palette, animations,
+    sonner styling) unchanged. No working surfaces regressed; new
+    server-side persistence layers cohabit with the existing
+    Zustand mirrors so the offline / no-env demo still works.

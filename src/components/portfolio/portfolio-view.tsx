@@ -3,98 +3,120 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Wallet, TrendingUp, TrendingDown } from "lucide-react";
-import { useShallow } from "zustand/react/shallow";
-import { useZapStore, useHydrated, type Position } from "@/lib/store";
+import { ArrowUpRight, Wallet, TrendingUp, TrendingDown, PieChart } from "lucide-react";
 import { useViewer } from "@/lib/use-viewer";
-import { getMarket } from "@/lib/fixtures";
 import { CategoryTag } from "@/components/expert-badge";
 import { SellSheet } from "@/components/market/sell-sheet";
 import { ZapMark } from "@/components/zap-logo";
 import { cn } from "@/lib/utils";
 
 /**
- * Portfolio / Portfolio Management ("מניות שקניתי") view.
+ * Portfolio view — server-rendered against real Supabase positions.
  *
- * Replaces the old "Settings" surface in the avatar dropdown. Shows
- * every active purchased contract the viewer holds:
- *
- *   - market question + category
- *   - side (YES / NO)
- *   - shares held + buy-in cost (denominated in Zaps)
- *   - live valuation derived from `marketPrices` (kept in lockstep with
- *     the realtime ticker)
- *   - per-position PnL and aggregate exposure / unrealized PnL
- *
- * Positions are read straight from the Zustand `positions` slice —
- * the same slice the trade engine writes to, so a successful buy/sell
- * on the market page reflects here instantly. Authentic logged-in
- * `viewer.id` from `useViewer` drives the empty/signed-out states.
+ * No more Zustand fakery: each row reflects the actual `positions`
+ * table joined with `markets` (live yes/no price, category, resolution
+ * date). Aggregate buy-in, live valuation, and PnL are derived from
+ * those real numbers. Balance is sourced from `useViewer` so the
+ * realtime Postgres channel keeps it in lockstep with the topbar pill.
  */
+interface ServerPosition {
+  id?: string;
+  market_id: string;
+  side: "YES" | "NO";
+  shares: number;
+  avg_price: number;
+  market?: {
+    id: string;
+    question: string;
+    yes_price: number;
+    no_price: number;
+    status: string;
+    outcome: string | null;
+    resolution_date: string | null;
+    category?: { slug: string; name: string; color: string } | null;
+  } | null;
+}
+
 interface Row {
-  position: Position;
+  marketId: string;
   question: string;
-  category: string | undefined;
+  category?: { slug: string; name: string; color: string } | null;
+  side: "YES" | "NO";
+  shares: number;
+  avgPrice: number;
+  staked: number;
   currentPrice: number;
   currentValue: number;
   pnl: number;
   pnlPct: number;
+  resolved: boolean;
+  outcome: string | null;
+  resolutionDate: string | null;
 }
 
-export function PortfolioView() {
-  const hydrated = useHydrated();
-  const { viewer, loading: viewerLoading } = useViewer();
-  const positions = useZapStore(useShallow((s) => s.positions));
-  const marketPrices = useZapStore(useShallow((s) => s.marketPrices));
+interface Props {
+  initialPositions: ServerPosition[];
+  initialBalance: number;
+  initialSignedIn: boolean;
+}
+
+export function PortfolioView({
+  initialPositions,
+  initialBalance,
+  initialSignedIn,
+}: Props) {
+  const { viewer } = useViewer();
   const [sellTarget, setSellTarget] = useState<{
     marketId: string;
     side: "YES" | "NO";
   } | null>(null);
 
+  const balance = viewer?.zaps ?? initialBalance;
+
   const rows = useMemo<Row[]>(() => {
-    return positions
-      .map<Row | null>((position) => {
-        const market = getMarket(position.marketId);
-        if (!market) return null;
-        const live = marketPrices[position.marketId];
+    return initialPositions
+      .map<Row | null>((p) => {
+        if (!p.market) return null;
         const currentPrice =
-          position.side === "YES"
-            ? live?.yes ?? market.currentYesPrice
-            : live?.no ?? market.currentNoPrice;
-        const currentValue = Math.round((position.shares * currentPrice) / 100);
-        const pnl = currentValue - position.staked;
-        const pnlPct =
-          position.staked > 0 ? Math.round((pnl / position.staked) * 100) : 0;
+          p.side === "YES" ? p.market.yes_price : p.market.no_price;
+        const staked = Math.round((p.shares * p.avg_price) / 100);
+        const currentValue = Math.round((p.shares * currentPrice) / 100);
+        const pnl = currentValue - staked;
+        const pnlPct = staked > 0 ? Math.round((pnl / staked) * 100) : 0;
         return {
-          position,
-          question: market.question,
-          category: market.category,
+          marketId: p.market.id,
+          question: p.market.question,
+          category: p.market.category ?? null,
+          side: p.side,
+          shares: p.shares,
+          avgPrice: p.avg_price,
+          staked,
           currentPrice,
           currentValue,
           pnl,
           pnlPct,
+          resolved: p.market.status === "resolved",
+          outcome: p.market.outcome ?? null,
+          resolutionDate: p.market.resolution_date ?? null,
         };
       })
       .filter((r): r is Row => r !== null)
       .sort((a, b) => b.currentValue - a.currentValue);
-  }, [positions, marketPrices]);
+  }, [initialPositions]);
 
   const totals = useMemo(() => {
-    const staked = rows.reduce((sum, r) => sum + r.position.staked, 0);
+    const staked = rows.reduce((sum, r) => sum + r.staked, 0);
     const value = rows.reduce((sum, r) => sum + r.currentValue, 0);
     const pnl = value - staked;
-    return { staked, value, pnl };
+    const pnlPct = staked > 0 ? Math.round((pnl / staked) * 100) : 0;
+    return { staked, value, pnl, pnlPct };
   }, [rows]);
 
-  if (!hydrated || viewerLoading) {
+  // Server already resolved the auth gate — show signed-out state
+  // immediately, no skeleton flicker.
+  if (!initialSignedIn) {
     return (
-      <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] h-[280px] animate-pulse" />
-    );
-  }
-
-  if (!viewer) {
-    return (
-      <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] p-8 text-center">
+      <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] p-10 text-center">
         <Wallet className="h-7 w-7 text-[#FFE600] mx-auto mb-3" />
         <h2 className="text-lg font-bold text-white">Sign in to see your portfolio</h2>
         <p className="text-sm text-[#8B92A8] mt-2 max-w-md mx-auto">
@@ -127,7 +149,7 @@ export function PortfolioView() {
             Live balance
           </div>
           <div className="text-2xl font-bold tabular-nums text-white inline-flex items-center gap-1.5">
-            {viewer.zaps.toLocaleString()}
+            {balance.toLocaleString()}
             <ZapMark className="h-4 w-4" />
           </div>
         </div>
@@ -135,20 +157,26 @@ export function PortfolioView() {
 
       <section
         aria-label="Portfolio summary"
-        className="mt-6 grid grid-cols-3 gap-px bg-[#2A2F3D] rounded-[14px] overflow-hidden border border-[#2A2F3D]"
+        className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-px bg-[#2A2F3D] rounded-[14px] overflow-hidden border border-[#2A2F3D]"
       >
         <SummaryStat
+          label="Open positions"
+          value={rows.length.toString()}
+          icon={<PieChart className="h-3.5 w-3.5" />}
+          plain
+        />
+        <SummaryStat
           label="Buy-in cost"
-          value={`${totals.staked.toLocaleString()}`}
+          value={totals.staked.toLocaleString()}
           icon={<Wallet className="h-3.5 w-3.5" />}
         />
         <SummaryStat
           label="Live valuation"
-          value={`${totals.value.toLocaleString()}`}
+          value={totals.value.toLocaleString()}
           icon={<ZapMark className="h-3.5 w-3.5" />}
         />
         <SummaryStat
-          label="Unrealized PnL"
+          label={`Unrealized PnL${totals.staked > 0 ? ` · ${totals.pnlPct >= 0 ? "+" : ""}${totals.pnlPct}%` : ""}`}
           value={`${totals.pnl >= 0 ? "+" : ""}${totals.pnl.toLocaleString()}`}
           icon={
             totals.pnl >= 0 ? (
@@ -166,7 +194,7 @@ export function PortfolioView() {
         {rows.length === 0 ? (
           <div className="mt-3 rounded-[14px] border border-dashed border-[#2A2F3D] p-10 text-center">
             <p className="text-sm text-[#8B92A8]">
-              You don&apos;t hold any open contracts yet. Pick a market and
+              You don&apos;t hold any contracts yet. Pick a market and
               take a position to see it here.
             </p>
             <Link
@@ -180,12 +208,12 @@ export function PortfolioView() {
           <ul className="mt-3 space-y-2">
             {rows.map((row) => (
               <PositionRow
-                key={`${row.position.marketId}-${row.position.side}`}
+                key={`${row.marketId}-${row.side}`}
                 row={row}
                 onSell={() =>
                   setSellTarget({
-                    marketId: row.position.marketId,
-                    side: row.position.side,
+                    marketId: row.marketId,
+                    side: row.side,
                   })
                 }
               />
@@ -211,11 +239,13 @@ function SummaryStat({
   value,
   icon,
   colorClass,
+  plain,
 }: {
   label: string;
   value: string;
   icon: React.ReactNode;
   colorClass?: string;
+  plain?: boolean;
 }) {
   return (
     <div className="bg-[#1A1D26] p-4">
@@ -230,15 +260,19 @@ function SummaryStat({
         )}
       >
         {value}
-        <ZapMark className="h-3.5 w-3.5" />
+        {!plain && <ZapMark className="h-3.5 w-3.5" />}
       </div>
     </div>
   );
 }
 
 function PositionRow({ row, onSell }: { row: Row; onSell: () => void }) {
-  const isYes = row.position.side === "YES";
+  const isYes = row.side === "YES";
   const sideColor = isYes ? "#00D982" : "#FF4757";
+  const resolvedWin =
+    row.resolved &&
+    ((row.outcome === "YES" && row.side === "YES") ||
+      (row.outcome === "NO" && row.side === "NO"));
   return (
     <motion.li
       initial={{ opacity: 0, y: 4 }}
@@ -248,13 +282,13 @@ function PositionRow({ row, onSell }: { row: Row; onSell: () => void }) {
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <Link
-            href={`/market/${row.position.marketId}`}
+            href={`/market/${row.marketId}`}
             className="text-[15px] font-semibold text-white hover:text-[#FFE600] transition-colors line-clamp-2"
           >
             {row.question}
           </Link>
           <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            {row.category && <CategoryTag category={row.category} />}
+            {row.category && <CategoryTag category={row.category.slug} />}
             <span
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-mono font-bold uppercase tracking-wider"
               style={{
@@ -263,24 +297,37 @@ function PositionRow({ row, onSell }: { row: Row; onSell: () => void }) {
                 border: `1px solid ${sideColor}40`,
               }}
             >
-              {row.position.side}
+              {row.side}
             </span>
             <span className="text-[11px] font-mono text-[#5A6175] tabular-nums">
-              {row.position.shares.toLocaleString()} shares @{" "}
-              {row.position.avgPrice}% avg
+              {row.shares.toLocaleString()} shares @ {row.avgPrice}% avg
             </span>
+            {row.resolved && (
+              <span
+                className={cn(
+                  "text-[10px] font-mono font-bold uppercase tracking-widest px-1.5 py-0.5 rounded",
+                  resolvedWin
+                    ? "bg-[#00D982]/15 text-[#00D982] border border-[#00D982]/40"
+                    : "bg-[#FF4757]/15 text-[#FF4757] border border-[#FF4757]/40",
+                )}
+              >
+                Resolved · {row.outcome ?? "—"}
+              </span>
+            )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onSell}
-          className="text-[11px] font-bold px-3 h-8 rounded-md border border-[#2A2F3D] hover:border-[#FFE600]/40 hover:text-[#FFE600] text-white transition-colors"
-        >
-          Sell
-        </button>
+        {!row.resolved && (
+          <button
+            type="button"
+            onClick={onSell}
+            className="text-[11px] font-bold px-3 h-8 rounded-md border border-[#2A2F3D] hover:border-[#FFE600]/40 hover:text-[#FFE600] text-white transition-colors"
+          >
+            Sell
+          </button>
+        )}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-3 text-[12px] font-mono">
-        <Stat label="Buy-in" value={`${row.position.staked.toLocaleString()}⚡`} />
+        <Stat label="Buy-in" value={`${row.staked.toLocaleString()}⚡`} />
         <Stat
           label="Live value"
           value={`${row.currentValue.toLocaleString()}⚡`}

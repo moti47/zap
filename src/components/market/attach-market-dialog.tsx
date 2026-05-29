@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Search, Clock, ArrowLeft, Check, X } from "lucide-react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +17,13 @@ import { ZapMark } from "../zap-logo";
 import { Sparkline } from "./sparkline";
 import { useZapStore, useHydrated } from "@/lib/store";
 import {
-  markets,
+  markets as fixtureMarkets,
   CATEGORIES,
   type Category,
   type Market,
 } from "@/lib/fixtures";
+import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
+import { isDemoMode } from "@/lib/demo-mode";
 import {
   cn,
   categoryColor,
@@ -55,16 +58,68 @@ export function AttachMarketDialog({
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("trending");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [serverMarkets, setServerMarkets] = useState<Market[] | null>(null);
+  const [loadingMarkets, setLoadingMarkets] = useState(false);
 
-  // Reset state every time the modal opens
+  // Reset state every time the modal opens, and lazily load real
+  // Supabase markets so the attach picker stops only showing fixtures.
   useEffect(() => {
-    if (open) {
-      setActiveCategory("all");
-      setSearch("");
-      setSort("trending");
-      setPendingId(null);
-    }
+    if (!open) return;
+    setActiveCategory("all");
+    setSearch("");
+    setSort("trending");
+    setPendingId(null);
+    if (!hasSupabaseEnv()) return;
+    let cancelled = false;
+    setLoadingMarkets(true);
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("markets")
+          .select(
+            "id, question, description, total_volume, yes_price, no_price, resolution_date, created_at, hero_image_url, category:categories!inner(slug)",
+          )
+          .eq("status", "open")
+          .order("total_volume", { ascending: false })
+          .limit(60);
+        if (cancelled) return;
+        const mapped: Market[] = (data ?? []).map((m: any) => ({
+          id: m.id,
+          question: m.question,
+          description: m.description ?? "",
+          category: (m.category?.slug as Category) ?? "general",
+          createdAt: m.created_at,
+          resolutionDate: m.resolution_date,
+          resolutionSource: "",
+          currentYesPrice: Number(m.yes_price) || 50,
+          currentNoPrice: Number(m.no_price) || 50,
+          totalVolume: Number(m.total_volume) || 0,
+          volume24h: 0,
+          openInterest: 0,
+          traders: 0,
+          priceHistory: [],
+          topHolders: { yes: [], no: [] },
+        }));
+        setServerMarkets(mapped);
+      } catch {
+        if (!cancelled) setServerMarkets(null);
+      } finally {
+        if (!cancelled) setLoadingMarkets(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
+
+  // Source of truth: real DB markets when available, otherwise fall
+  // back to the bundled fixtures so the demo mode still has a catalog.
+  const markets: Market[] = useMemo(() => {
+    if (serverMarkets && serverMarkets.length > 0) return serverMarkets;
+    if (isDemoMode() || !hasSupabaseEnv()) return fixtureMarkets;
+    return serverMarkets ?? [];
+  }, [serverMarkets]);
 
   const filtered = useMemo(() => {
     const lower = search.trim().toLowerCase();
@@ -98,7 +153,7 @@ export function AttachMarketDialog({
         list = [...list].sort((a, b) => b.volume24h - a.volume24h);
     }
     return list;
-  }, [activeCategory, search, sort, livePrices]);
+  }, [activeCategory, search, sort, livePrices, markets]);
 
   const pending = pendingId ? markets.find((m) => m.id === pendingId) ?? null : null;
 
@@ -197,9 +252,20 @@ export function AttachMarketDialog({
               </div>
             </div>
             <div className="px-5 py-4 max-h-[60vh] overflow-y-auto thin-scrollbar">
-              {filtered.length === 0 ? (
+              {loadingMarkets && markets.length === 0 ? (
                 <div className="text-center text-sm text-[#8B92A8] py-10">
-                  No markets match your filters.
+                  Loading markets…
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="text-center text-sm text-[#8B92A8] py-10 space-y-3">
+                  <div>No markets match your filters.</div>
+                  <Link
+                    href="/propose"
+                    onClick={() => onOpenChange(false)}
+                    className="inline-flex items-center gap-1 px-3 h-8 rounded-md text-[12px] font-bold bg-[#FFE600] text-[#0E1016] hover:scale-[1.03] active:scale-95 transition-transform"
+                  >
+                    Propose a new market
+                  </Link>
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-3">

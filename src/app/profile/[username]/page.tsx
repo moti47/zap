@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { users, currentUser, type User } from "@/lib/fixtures";
 import { ProfileHero } from "@/components/profile/profile-hero";
 import { ExpertScoresStrip } from "@/components/profile/expert-scores-strip";
-import { CalibrationChart } from "@/components/profile/calibration-chart";
+// Calibration chart removed per user feedback (Polish 4) — was a
+// visually dominant graph with mostly fixture data that didn't earn
+// the real estate. Expert scores strip + tabs convey the same signal.
 import {
   ProfileTabs,
   type RealProfilePost,
@@ -86,9 +88,6 @@ export default async function ProfilePage({ params }: PageParams) {
       <ProfileHero user={user} dbProfile={dbProfile} canEdit={isMe} />
       <div className="px-4 lg:px-6 mt-6">
         <ExpertScoresStrip user={user} />
-      </div>
-      <div className="px-4 lg:px-6 mt-6">
-        <CalibrationChart user={user} />
       </div>
       <div className="px-4 lg:px-6">
         <ProfileTabs user={user} realPosts={realPosts} />

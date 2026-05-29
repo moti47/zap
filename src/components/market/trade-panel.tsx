@@ -23,6 +23,7 @@ import { cn, formatLargeNumber } from "@/lib/utils";
 import type { Market } from "@/lib/fixtures";
 import { executeTradeAction } from "@/app/market/[id]/trade-actions";
 import { useViewer, bumpViewerZaps } from "@/lib/use-viewer";
+import { fireBumpQuest } from "@/lib/quest-bump";
 
 /**
  * UUID-shaped market ids come from Supabase; non-UUID ids (e.g.
@@ -124,6 +125,7 @@ export function TradePanel({ market, className }: TradePanelProps) {
 
   const handleAction = () => {
     if (isPending) return;
+    if (mode === "BUY") fireBumpQuest("trade_market");
     // Cheap-fail validations happen before optimistic state changes.
     if (mode === "BUY") {
       if (clampedAmount > points) {

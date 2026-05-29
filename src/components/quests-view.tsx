@@ -37,6 +37,7 @@ import {
 import { ZapMark } from "./zap-logo";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { claimQuestAction } from "@/app/quests/actions";
 
 const ICONS: Record<QuestKind, React.ComponentType<{ className?: string }>> = {
   create_post: Pencil,
@@ -317,10 +318,22 @@ export function QuestsView() {
                       {row.completed && !row.claimed && (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             const reward = claimQuest(row.kind);
                             if (reward > 0) {
                               toast.success(`+${reward}⚡ claimed`);
+                            }
+                            if (questsViewer && def) {
+                              const result = await claimQuestAction({
+                                kind: row.kind,
+                                goal: def.goal,
+                                reward: def.reward,
+                              });
+                              if (!result.ok && result.error !== "already_claimed") {
+                                toast.info("Server claim deferred", {
+                                  description: result.error,
+                                });
+                              }
                             }
                           }}
                           className="text-[11px] font-bold px-2.5 py-1 rounded-md bg-[#FFE600] text-[#0E1016] hover:scale-[1.03] active:scale-95 transition-transform"

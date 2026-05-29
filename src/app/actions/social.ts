@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createPost, togglePostLike, togglePostBookmark } from "@/lib/db/posts";
+import { toggleMarketBookmark } from "@/lib/db/bookmarks";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser, NotSignedInError } from "@/lib/auth";
 import { sanitizeHtmlServer, htmlToPlainTextServer } from "@/lib/sanitize-server";
@@ -138,6 +139,21 @@ export async function toggleBookmarkAction(
     const parsed = ToggleByUuid.safeParse({ id: postId });
     if (!parsed.success) return { ok: false, error: formatZodError(parsed.error) };
     const { bookmarked } = await togglePostBookmark(parsed.data.id);
+    revalidatePath("/saved");
+    return { ok: true, bookmarked };
+  } catch (err) {
+    return notSignedIn<{ bookmarked: boolean }>(err) ?? unknownErr<{ bookmarked: boolean }>(err);
+  }
+}
+
+export async function toggleMarketBookmarkAction(
+  marketId: unknown,
+): Promise<Result<{ bookmarked: boolean }>> {
+  try {
+    await requireUser();
+    const parsed = ToggleByUuid.safeParse({ id: marketId });
+    if (!parsed.success) return { ok: false, error: formatZodError(parsed.error) };
+    const { bookmarked } = await toggleMarketBookmark(parsed.data.id);
     revalidatePath("/saved");
     return { ok: true, bookmarked };
   } catch (err) {

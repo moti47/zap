@@ -23,6 +23,7 @@ import {
 import Link from "next/link";
 import { useShallow } from "zustand/react/shallow";
 import { useHydrated, useZapStore } from "@/lib/store";
+import { useViewer } from "@/lib/use-viewer";
 import {
   questProgressFromCounts,
   type ActiveQuest,
@@ -31,6 +32,7 @@ import {
 import { ZapMark } from "./zap-logo";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { claimQuestAction } from "@/app/quests/actions";
 
 const ICONS: Record<QuestKind, React.ComponentType<{ className?: string }>> = {
   create_post: Pencil,
@@ -55,6 +57,7 @@ export function QuestsCard() {
   const counts = useZapStore((s) => s.questCounts);
   const claimed = useZapStore((s) => s.questClaimed);
   const claimQuest = useZapStore((s) => s.claimQuest);
+  const { viewer } = useViewer();
   const [burstAt, setBurstAt] = useState(0);
 
   useEffect(() => {
@@ -169,11 +172,35 @@ export function QuestsCard() {
                   {row.completed && !row.claimed ? (
                     <motion.button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
+                        // Local optimistic claim first — UI bumps
+                        // immediately, the row collapses into the
+                        // claimed state.
                         const reward = claimQuest(row.kind);
                         if (reward > 0) {
                           setBurstAt((n) => n + 1);
                           toast.success(`+${reward}⚡ claimed`);
+                        }
+                        // Server claim — credits real `profiles.zaps`
+                        // when signed in. The local claim above is a
+                        // demo no-op for the offline fixture flow.
+                        if (viewer) {
+                          const def = activeQuests.find((q) => q.kind === row.kind);
+                          if (!def) return;
+                          const result = await claimQuestAction({
+                            kind: row.kind,
+                            goal: def.goal,
+                            reward: def.reward,
+                          });
+                          if (!result.ok) {
+                            // Reasons like "incomplete" or "day_rolled"
+                            // mean the server disagreed — soft-warn
+                            // instead of failing loudly.
+                            if (result.error === "already_claimed") return;
+                            toast.info("Quest claim couldn't post — try again later", {
+                              description: result.error,
+                            });
+                          }
                         }
                       }}
                       whileTap={{ scale: 0.92 }}

@@ -17,6 +17,7 @@ import type { Market } from "@/lib/fixtures";
 import { useZapStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatLargeNumber, timeUntil, cn } from "@/lib/utils";
+import { toggleMarketBookmarkAction } from "@/app/actions/social";
 
 interface MarketCardCompactProps {
   market: Market;
@@ -67,8 +68,17 @@ export function MarketCardCompact({ market, variant = "embedded" }: MarketCardCo
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              const wasSaved = saved;
               toggleSave(market.id);
-              toast.success(saved ? "Removed from saved" : "Market saved");
+              toast.success(wasSaved ? "Removed from saved" : "Market saved");
+              // Persist to DB so the bookmark survives reload + shows
+              // up on /saved#markets. UUID-shaped ids only (fixture
+              // markets stay local-only).
+              if (/^[0-9a-f]{8}-/i.test(market.id)) {
+                void toggleMarketBookmarkAction(market.id).then((result) => {
+                  if (!result.ok) toggleSave(market.id); // rollback
+                });
+              }
             }}
             className={cn(
               "p-1 transition-colors",

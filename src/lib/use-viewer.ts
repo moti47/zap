@@ -48,6 +48,47 @@ export function bumpViewerZaps(delta: number, reason = "optimistic") {
   }
 }
 
+/**
+ * Module-level shared viewer cache.
+ *
+ * Without this, every component that calls `useViewer()` (topbar,
+ * trade panel, composer, portfolio, …) maintains its own
+ * `useState({viewer:null})` and triggers an independent fetch +
+ * subscribe. Concretely that was producing the screenshot bug the
+ * user flagged: topbar showed `9,999,999 ZAPS` (its viewer already
+ * loaded), the trade panel showed `Balance after trade: 13` (its
+ * viewer was still null, so it fell back to the Zustand `points`
+ * default).
+ *
+ * Now every hook reads + writes through `sharedViewer` and broadcasts
+ * changes to its peers via `stateListeners`. The first hook that
+ * mounts kicks off the fetch + realtime subscription; subsequent
+ * hooks get the cached value instantly and free-ride on the same
+ * channel.
+ */
+type StateListener = (next: { viewer: Viewer | null; loading: boolean }) => void;
+const stateListeners = new Set<StateListener>();
+let sharedViewer: Viewer | null = null;
+let sharedLoading = true;
+let sharedFetchStarted = false;
+let sharedFetchPromise: Promise<void> | null = null;
+
+function broadcastViewerState() {
+  for (const fn of Array.from(stateListeners)) {
+    try {
+      fn({ viewer: sharedViewer, loading: sharedLoading });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function setSharedViewer(next: Viewer | null, loading = false) {
+  sharedViewer = next;
+  sharedLoading = loading;
+  broadcastViewerState();
+}
+
 export interface Viewer {
   id: string;
   username: string;
@@ -98,23 +139,34 @@ async function fetchViewer(
 }
 
 export function useViewer(): State {
-  const [state, setState] = useState<State>({ viewer: null, loading: true });
+  const [state, setState] = useState<State>({
+    viewer: sharedViewer,
+    loading: sharedLoading,
+  });
+
+  // Subscribe to the shared cache so every useViewer caller sees the
+  // same viewer the moment any one fetch resolves.
+  useEffect(() => {
+    const listener: StateListener = (next) => setState(next);
+    stateListeners.add(listener);
+    // Sync to current cache in case it changed before subscription.
+    setState({ viewer: sharedViewer, loading: sharedLoading });
+    return () => {
+      stateListeners.delete(listener);
+    };
+  }, []);
 
   // Round-3 — wire this consumer into the global optimistic bus so
   // an in-flight trade can update the rendered balance immediately
   // across every mounted useViewer hook in the tree.
   useEffect(() => {
     const listener: ViewerListener = (delta) => {
-      setState((prev) => {
-        if (!prev.viewer) return prev;
-        return {
-          ...prev,
-          viewer: {
-            ...prev.viewer,
-            zaps: Math.max(0, prev.viewer.zaps + delta),
-          },
-        };
-      });
+      if (!sharedViewer) return;
+      sharedViewer = {
+        ...sharedViewer,
+        zaps: Math.max(0, sharedViewer.zaps + delta),
+      };
+      broadcastViewerState();
     };
     viewerListeners.add(listener);
     return () => {
@@ -123,8 +175,13 @@ export function useViewer(): State {
   }, []);
 
   useEffect(() => {
+    // Only the first hook that mounts kicks off the fetch + realtime
+    // subscription; subsequent hooks ride on the shared cache.
+    if (sharedFetchStarted) return;
+    sharedFetchStarted = true;
+
     if (!hasSupabaseEnv()) {
-      setState({ viewer: null, loading: false });
+      setSharedViewer(null, false);
       return;
     }
     let cancelled = false;
@@ -175,52 +232,48 @@ export function useViewer(): State {
           // Postgres broadcasts the change, without a second SELECT.
           const next = (payload as { new?: Record<string, unknown> }).new;
           if (next && typeof next === "object" && "zaps" in next) {
-            setState((prev) => {
-              if (!prev.viewer) return prev;
-              return {
-                ...prev,
-                viewer: {
-                  ...prev.viewer,
-                  zaps:
-                    typeof next.zaps === "number"
-                      ? next.zaps
-                      : prev.viewer.zaps,
-                  name:
-                    typeof next.name === "string" ? next.name : prev.viewer.name,
-                  username:
-                    typeof next.username === "string"
-                      ? next.username
-                      : prev.viewer.username,
-                  bio:
-                    typeof next.bio === "string" || next.bio === null
-                      ? (next.bio as string | null)
-                      : prev.viewer.bio,
-                  avatar_url:
-                    typeof next.avatar_url === "string" || next.avatar_url === null
-                      ? (next.avatar_url as string | null)
-                      : prev.viewer.avatar_url,
-                  banner_url:
-                    typeof next.banner_url === "string" || next.banner_url === null
-                      ? (next.banner_url as string | null)
-                      : prev.viewer.banner_url,
-                  is_admin:
-                    Boolean(next.is_admin) ||
-                    (typeof next.role === "string" && next.role === "admin"),
-                  updated_at:
-                    typeof next.updated_at === "string"
-                      ? next.updated_at
-                      : new Date().toISOString(),
-                },
-              };
-            });
+            if (!sharedViewer) return;
+            sharedViewer = {
+              ...sharedViewer,
+              zaps:
+                typeof next.zaps === "number"
+                  ? next.zaps
+                  : sharedViewer.zaps,
+              name:
+                typeof next.name === "string"
+                  ? next.name
+                  : sharedViewer.name,
+              username:
+                typeof next.username === "string"
+                  ? next.username
+                  : sharedViewer.username,
+              bio:
+                typeof next.bio === "string" || next.bio === null
+                  ? (next.bio as string | null)
+                  : sharedViewer.bio,
+              avatar_url:
+                typeof next.avatar_url === "string" || next.avatar_url === null
+                  ? (next.avatar_url as string | null)
+                  : sharedViewer.avatar_url,
+              banner_url:
+                typeof next.banner_url === "string" || next.banner_url === null
+                  ? (next.banner_url as string | null)
+                  : sharedViewer.banner_url,
+              is_admin:
+                Boolean(next.is_admin) ||
+                (typeof next.role === "string" && next.role === "admin"),
+              updated_at:
+                typeof next.updated_at === "string"
+                  ? next.updated_at
+                  : new Date().toISOString(),
+            };
+            broadcastViewerState();
             return;
           }
           // Fallback — if Postgres didn't include the new row payload
           // (e.g. replica identity not set to FULL), do a refetch.
           fetchViewer(supabase).then((nextViewer) => {
-            if (!cancelled) {
-              setState((prev) => ({ ...prev, viewer: nextViewer }));
-            }
+            if (!cancelled) setSharedViewer(nextViewer, false);
           });
         },
       );
@@ -232,19 +285,19 @@ export function useViewer(): State {
       try {
         const viewer = await fetchViewer(supabase);
         if (cancelled) return;
-        setState({ viewer, loading: false });
+        setSharedViewer(viewer, false);
         if (viewer) ensureChannel(viewer.id);
       } catch (err) {
         // Never block the rest of the app on a profile fetch failure
         // — set loading=false so gated clicks unblock.
-        if (!cancelled) setState({ viewer: null, loading: false });
+        if (!cancelled) setSharedViewer(null, false);
         // eslint-disable-next-line no-console
         console.error("[useViewer] refresh failed:", err);
       }
     };
 
     // Initial fetch.
-    refresh();
+    sharedFetchPromise = refresh();
 
     // CRITICAL: react to auth state changes. SIGNED_OUT must
     // immediately flip the viewer to null so the topbar swaps to
@@ -263,7 +316,7 @@ export function useViewer(): State {
           profileChannel = null;
         }
         subscribedForId = null;
-        setState({ viewer: null, loading: false });
+        setSharedViewer(null, false);
         return;
       }
       // SIGNED_IN / TOKEN_REFRESHED / USER_UPDATED — re-fetch.

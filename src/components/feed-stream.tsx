@@ -60,6 +60,10 @@ interface ServerPost {
 
 interface FeedStreamProps {
   initialServerPosts?: ServerPost[];
+  /** Server-resolved signed-in flag — lets the composer paint on the
+   *  first client render without waiting for useViewer to round-trip.
+   *  Falls back to the client check when not provided. */
+  initialSignedIn?: boolean;
 }
 
 // Convert a Supabase post row into the UserPost shape the FeedItem
@@ -93,13 +97,21 @@ function serverPostToUserPost(p: ServerPost): UserPost {
 
 const PAGE_SIZE = 12;
 
-export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
+export function FeedStream({
+  initialServerPosts = [],
+  initialSignedIn = false,
+}: FeedStreamProps) {
   const hydrated = useHydrated();
   // Item #1 — wait until the viewer is resolved before deciding which
   // composer surface to render. Otherwise SIGNED_IN users see a brief
   // "Join Zap to post your take" flash while useViewer is still
   // loading the profile row, which is the exact "split-state" bug.
-  const { isSignedIn, loading: authLoading } = useIsSignedIn();
+  // When the server already resolved the signed-in flag (page.tsx), we
+  // use it as the first paint truth so the composer doesn't wait on a
+  // useViewer round-trip — collapses the "feed → wait → composer
+  // appears" jank the user reported.
+  const { isSignedIn: clientSignedIn, loading: authLoading } = useIsSignedIn();
+  const isSignedIn = authLoading ? initialSignedIn : clientSignedIn;
   const userPosts = useZapStore(useShallow((s) => s.userPosts));
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
@@ -342,9 +354,12 @@ export function FeedStream({ initialServerPosts = [] }: FeedStreamProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      {authLoading ? (
+      {authLoading && !initialSignedIn && !clientSignedIn ? (
         // Neutral placeholder while we resolve whether the viewer is
         // signed in — prevents the Topbar/Container split-state flash.
+        // Skipped when the server already told us this viewer is
+        // signed in: we render the composer immediately and let
+        // useViewer confirm in the background.
         <div className="rounded-[14px] border border-[#2A2F3D] bg-[#1A1D26] h-[120px]" />
       ) : isSignedIn ? (
         <PostComposer />

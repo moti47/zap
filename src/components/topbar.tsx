@@ -54,9 +54,10 @@ const navItems: NavItem[] = [
   { href: "/saved", label: "Saved", match: (p: string) => p.startsWith("/saved"), authOnly: true },
   { href: "/quests", label: "Quests", match: (p: string) => p.startsWith("/quests"), authOnly: true },
   { href: "/portfolio", label: "Portfolio", match: (p: string) => p.startsWith("/portfolio"), authOnly: true },
-  // "Propose" was removed from the main navigation — regular users no
-  // longer surface a path to author markets. Admins still reach the
-  // creation flow via `/admin`.
+  // Signed-in users can propose markets; admins approve them. The
+  // entry point used to be hidden, which made "create market" feel
+  // broken — now there's a clear nav-level affordance.
+  { href: "/propose", label: "Propose", match: (p: string) => p.startsWith("/propose"), authOnly: true },
   { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin"), adminOnly: true },
 ];
 

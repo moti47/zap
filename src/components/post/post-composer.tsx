@@ -26,6 +26,7 @@ import { sanitizeHtml, htmlToPlainText } from "@/lib/sanitize";
 import { extractMentions } from "@/lib/mentions";
 import { notifyMentionsAction } from "@/app/feed/actions";
 import { createPostAction } from "@/app/actions/social";
+import { fireBumpQuest } from "@/lib/quest-bump";
 import { CATEGORIES, markets, type Category } from "@/lib/fixtures";
 import { cn, categoryColor } from "@/lib/utils";
 import {
@@ -264,6 +265,12 @@ export function PostComposer({
         }
       });
     }
+    // Persist quest progress server-side so the daily quest tally
+    // survives reloads. Fire-and-forget; the Zustand counts already
+    // ticked optimistically inside `addPost`.
+    fireBumpQuest("create_post");
+    if (images.length > 0) fireBumpQuest("create_post_image");
+    if (marketId) fireBumpQuest("attach_market");
     // Phase 9 — fire @mention notifications (best-effort, fails silently
     // when there's no Supabase backend wired).
     const mentioned = extractMentions(bodyText);

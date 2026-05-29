@@ -5,9 +5,11 @@ import { motion } from "framer-motion";
 import { Flame, RefreshCw, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useHydrated, useZapStore } from "@/lib/store";
+import { useViewer } from "@/lib/use-viewer";
 import { rewardForNextDay } from "@/lib/streaks";
 import { toast } from "sonner";
 import { Confetti } from "./confetti";
+import { touchStreakAction } from "@/app/quests/actions";
 
 /**
  * Sidebar streak card — compact, motivational, no internal tier math.
@@ -25,9 +27,11 @@ export function StreakCard() {
   const streak = useZapStore((s) => s.streak);
   const spendRecovery = useZapStore((s) => s.spendRecovery);
   const touchStreak = useZapStore((s) => s.touchStreak);
+  const { viewer } = useViewer();
 
   const [burstAt, setBurstAt] = useState(0);
   const lastStreakRef = useRef<number | null>(null);
+  const serverTouchedRef = useRef(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -38,6 +42,22 @@ export function StreakCard() {
       setTimeout(() => setBurstAt((n) => n + 1), 100);
     }
   }, [hydrated, touchStreak]);
+
+  // Persist streak server-side once per mount when signed in. The RPC
+  // is idempotent per UTC day, so a re-mount the same day no-ops on
+  // the server. On a fresh check-in the small Zap reward credits the
+  // canonical `profiles.zaps` (which then flows back through useViewer
+  // + the realtime channel into every BalancePill).
+  useEffect(() => {
+    if (!viewer || serverTouchedRef.current) return;
+    serverTouchedRef.current = true;
+    (async () => {
+      const result = await touchStreakAction();
+      if (result.ok && !result.alreadyToday && result.credited > 0) {
+        toast.success(`+${result.credited}⚡ daily streak reward`);
+      }
+    })();
+  }, [viewer]);
 
   // Pop confetti whenever the rendered streak number itself changes
   // (covers external recovery flows + multi-tab).

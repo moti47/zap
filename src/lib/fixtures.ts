@@ -155,7 +155,7 @@ export const currentUser: User = {
   avatarUrl: "",
   bio: "New here. Watching, learning, predicting.",
   joined: new Date().toISOString(),
-  followers: 12,
+  followers: 0,
   following: 0,
   totalPredictions: 0,
   pointsWon: 0,
