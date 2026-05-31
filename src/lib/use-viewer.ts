@@ -116,6 +116,13 @@ interface State {
   loading: boolean;
 }
 
+// Identity columns guaranteed to exist in every deployment (migrations
+// 0001+). The quest/streak columns (migration 0011) are appended only
+// when available — see `fetchViewer` for the graceful fallback.
+const BASE_PROFILE_COLUMNS =
+  "id, username, name, avatar_url, banner_url, bio, zaps, is_admin, role, updated_at";
+const EXTENDED_PROFILE_COLUMNS = `${BASE_PROFILE_COLUMNS}, quest_day, quest_progress, quest_claimed, streak_current, streak_longest, streak_last_check_in`;
+
 async function fetchViewer(
   supabase: SupabaseClient,
 ): Promise<Viewer | null> {
@@ -125,36 +132,71 @@ async function fetchViewer(
   if (!user) return null;
   // Polish 5 — pull quest + streak columns alongside the identity
   // payload so a single round-trip can re-hydrate the Zustand mirror.
-  // Tolerates the absence of these columns (migration 0011 not yet
-  // applied) — they fall back to undefined and the existing client
-  // defaults take over.
-  const { data: row } = await supabase
+  //
+  // CRITICAL: PostgREST returns a hard 400 error (not undefined) when a
+  // selected column does not exist. If migration 0011 has not been
+  // applied to this database, selecting `quest_day` etc. fails the WHOLE
+  // query — which would null out the viewer and make a signed-in user
+  // look anonymous. So we try the extended select first and, only if it
+  // errors, fall back to the always-present base columns. The quest /
+  // streak fields then resolve to their client-side defaults.
+  let row:
+    | (Record<string, unknown> & { id: string })
+    | null = null;
+  const extended = await supabase
     .from("profiles")
-    .select(
-      "id, username, name, avatar_url, banner_url, bio, zaps, is_admin, role, updated_at, quest_day, quest_progress, quest_claimed, streak_current, streak_longest, streak_last_check_in",
-    )
+    .select(EXTENDED_PROFILE_COLUMNS)
     .eq("id", user.id)
     .maybeSingle();
+  if (extended.error) {
+    // Most likely the 0011 columns are missing. Retry with base set so
+    // identity + balance still resolve. Any other error (RLS, network)
+    // also degrades gracefully to the base columns here.
+    const base = await supabase
+      .from("profiles")
+      .select(BASE_PROFILE_COLUMNS)
+      .eq("id", user.id)
+      .maybeSingle();
+    row = (base.data as typeof row) ?? null;
+  } else {
+    row = (extended.data as typeof row) ?? null;
+  }
   if (!row) return null;
+  const r = row as {
+    id: string;
+    username?: string | null;
+    name?: string | null;
+    avatar_url?: string | null;
+    banner_url?: string | null;
+    bio?: string | null;
+    zaps?: number | null;
+    is_admin?: boolean | null;
+    role?: string | null;
+    updated_at?: string | null;
+    quest_day?: string | null;
+    quest_progress?: Record<string, number> | null;
+    quest_claimed?: Record<string, boolean> | null;
+    streak_current?: number | null;
+    streak_longest?: number | null;
+    streak_last_check_in?: string | null;
+  };
   return {
-    id: row.id,
-    username: row.username,
-    name: row.name,
+    id: r.id,
+    username: r.username ?? "",
+    name: r.name ?? "",
     email: user.email ?? "",
-    avatar_url: row.avatar_url,
-    banner_url: row.banner_url,
-    bio: row.bio,
-    zaps: row.zaps,
-    is_admin:
-      Boolean(row.is_admin) ||
-      (typeof row.role === "string" && row.role === "admin"),
-    updated_at: row.updated_at ?? new Date().toISOString(),
-    quest_day: (row as any).quest_day ?? null,
-    quest_progress: (row as any).quest_progress ?? {},
-    quest_claimed: (row as any).quest_claimed ?? {},
-    streak_current: (row as any).streak_current ?? 0,
-    streak_longest: (row as any).streak_longest ?? 0,
-    streak_last_check_in: (row as any).streak_last_check_in ?? null,
+    avatar_url: r.avatar_url ?? null,
+    banner_url: r.banner_url ?? null,
+    bio: r.bio ?? null,
+    zaps: typeof r.zaps === "number" ? r.zaps : 0,
+    is_admin: Boolean(r.is_admin) || r.role === "admin",
+    updated_at: r.updated_at ?? new Date().toISOString(),
+    quest_day: r.quest_day ?? null,
+    quest_progress: r.quest_progress ?? {},
+    quest_claimed: r.quest_claimed ?? {},
+    streak_current: r.streak_current ?? 0,
+    streak_longest: r.streak_longest ?? 0,
+    streak_last_check_in: r.streak_last_check_in ?? null,
   };
 }
 

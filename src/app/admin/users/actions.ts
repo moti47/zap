@@ -86,7 +86,10 @@ export async function recomputeUserExpertiseAction(
       ? Number((data[0] as any) ?? 0)
       : Number(data ?? 0);
     revalidatePath("/admin/users");
-    revalidatePath(`/profile/${userId}`);
+    // The profile route is keyed by username, not id — `/profile/<uuid>`
+    // would never match. Revalidate the dynamic segment so EVERY profile
+    // page picks up the fresh expertise on next visit.
+    revalidatePath("/profile/[username]", "page");
     return { ok: true, touched: Number.isFinite(touched) ? touched : 0 };
   } catch (err) {
     return {
